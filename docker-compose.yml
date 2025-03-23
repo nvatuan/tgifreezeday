@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  tgifreezeday:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tgifreezeday:latest
+    container_name: tgifreezeday
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config/config.yaml
+      - ./credentials.json:/app/config/credentials.json
+    restart: unless-stopped
+    environment:
+      - TZ=UTC 
