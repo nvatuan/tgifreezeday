@@ -1,0 +1,16 @@
+readFrom:
+  googleCalendar:
+    id: "example-holidays@example.com"
+    todayIsFreezeDayIf:
+      - today:
+        - isTheFirstBusinessDayOfTheMonth
+      - today:
+        - isTheLastBusinessDayOfTheMonth
+      - tomorrow:
+        - isNonBusinessDay
+writeTo:
+  googleCalendar:
+    id: "example-freeze@example.com"
+    ifTodayIsFreezeDay:
+      default:
+        summary: "Today is FREEZE-DAY. no PROD operation is allowed." 

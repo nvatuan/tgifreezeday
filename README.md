@@ -93,23 +93,45 @@ Should have a config package to read environment var and populate a struct there
 
 Should have proper unit-testing, and have mock for Google Calendar to allow testing.
 
-<AI goes here>
+```
+tgifreezeday/
+├── cmd/
+│   └── tgifreezeday/
+│       └── main.go              # Application entrypoint
+├── internal/
+│   ├── config/
+│   │   └── config.go            # Config loading and validation
+│   ├── calendar/
+│   │   └── calendar.go          # Google Calendar logic, business day rules
+│   ├── freeze/
+│   │   └── freeze.go            # Freeze day calculation logic
+│   ├── events/
+│   │   └── events.go            # Event creation/deletion logic
+│   └── mock/
+│       └── mock_calendar.go     # Test mocks
+├── pkg/                         # Reusable packages (if any)
+├── go.mod
+├── go.sum
+└── README.md
+```
 
 ## Installation
 
-<AI goes here>
+- Requires Go 1.20+
+- Clone repo, run `go build ./cmd/tgifreezeday`
+- Set up Google API credentials (see below)
+- Run binary with config file or env vars
 
 ## Configuration
 
-<AI goes here>
-<!-- Environment variable for Google API -->
+- Set `GOOGLE_APP_CLIENT_CRED_JSON_PATH` to your service account JSON
+- Optionally set `CONFIG_PATH` to your YAML config file
+- See example config in README above
 
 ## License
 
-Free to use but must include source if distribute or use in internal projects.
-
-<AI update this>
+MIT. Free to use, modify, distribute, but must retain source and attribution.
 
 ## Contribution
 
-<AI update this>
+PRs welcome. Add tests for new features. Follow idiomatic Go. Open issues for bugs/requests.
