@@ -4,152 +4,112 @@ A Go application that helps announce production freeze days to ensure safe deplo
 
 1. Fetching holidays and special events from Google Calendar
 2. Updating a specific calendar with freeze days information
-3. Sending notifications to Slack channels
 
 ## Features
 
-- Automatic holiday detection from Google Calendar
-- Configurable rules for determining freeze days (e.g., day before/after holidays)
-- Slack notifications for upcoming freeze days
-- Support for weekend freeze periods
-- Calendar integration to maintain an up-to-date freeze day calendar
+### v1:
 
-## Architecture
+#### Core Functionality
 
-The application follows clean architecture principles to ensure separation of concerns and maintainability:
+For version 1, I am for these following features only:
+- Reads from a source calendar, checking if today is a freeze day. Freeze day in v1 is defined as:
+  - If today is the first business day of the month
+  - If today is a non-business day (eg. holiday, weekends, etc.)
+  - If tomorrow is a non-business day (eg. holiday, weekends, etc.)
+- If today is a freeze day, on a destination calendar, do this "default" behavior:
+  - Create a blocking (eg. "busy") event that spans from 8AM to 8PM that said "Today is Freeze-day."
+  - The "default" option can be passed with a "summary" that override the default message above.
 
-- **Core Domain**: Contains the business entities and rules independent of external frameworks
-- **Ports**: Define interfaces that the core domain expects from external adapters
-- **Adapters**: Implement the interfaces defined by ports, connecting to external systems
-- **Services**: Implement use cases by orchestrating domain objects and ports
+- "business day" is defined as day that normally business is being conducted.
+- Google Calendar is the only Calendar supported
 
-### Project Structure
+#### Non-core functionality
 
+- In case of a rule change after first run, the program must be able to remove old events and add new events that reflects the rules set. Because of that, some design effort must go to how to identify events that are created by the tool.
+- The program is designed to run periodically (eg. daily, weekly,...) so a "window" should be specify so it can update forward. For instance, window=7d meaning it will check the next 7 days for freeze days and mark the calendar, to avoid running for so long.
+- Program must check for permission issue and fail-fast if no permission to read or write.
+- Program must fail-fast if not set necessary environment variables
+- Should use client library instead of calling API HTTP requests.
+
+#### Config Format:
+
+The program will accept the following config to run.
+
+```yaml
+readFrom:
+  googleCalendar:
+    id: <google calendary id to read>
+    todayIsFreezeDayIf:
+    - [yesterday, today, tomorrow]: # with this block, rules are AND together. To do OR, specify multiple items with same key.
+      - isTheFirstBusinessDayOfTheMonth
+      - isTheLastBusinessDayOfTheMonth
+      - isNonBusinessDay
+writeTo:
+  googleCalendar:
+    id: <google calendary id to read>
+    ifTodayIsFreezeDay:
+      default:
+        summary: "string|null" # if `null`, use default message
 ```
-├── cmd/                # Application entry points
-│   └── tgifreezeday/   # Main application command
-├── internal/           # Private application code
-│   ├── core/           # Core business logic
-│   │   ├── domain/     # Domain models
-│   │   ├── ports/      # Interfaces defining the boundaries
-│   │   └── services/   # Use cases implementation
-│   ├── adapters/       # Implementations of the interfaces
-│   │   ├── datasource/ # Data source adapters (Google Calendar, etc.)
-│   │   └── destination/# Destination adapters (Google Calendar, etc.)
-│   └── config/         # Configuration parsing and validation
-└── pkg/                # Public libraries that can be used by external applications
-    └── rules/          # Rule engine and expression evaluation
+
+#### Example:
+
+If your organization has the following rules:
+
+> As a general rule, production operations should **not** be conducted on the following days:
+> - **First business day of the month**
+> - **Last business day of the month**
+> - **The day before public holidays or non-work day**
+
+The folloiwng config should reflect the above rule:
+
+```yaml
+readFrom:
+  googleCalendar:
+    id: <google calendar id to read from>
+    todayIsFreezeDayIf:
+      today:
+      - isTheFirstBusinessDayOfTheMonth
+      today:
+      - isTheLastBusinessDayOfTheMonth
+      tomorrow:
+      - isNonBusinessday
+writeTo:
+  googleCalendar:
+    id: <google calendary id to read>
+    ifTodayIsFreezeDay:
+      default:
+        summary: "Today is FREEZE-DAY. no PROD operation is allowed."
 ```
+
+## Structure
+
+Use golang. A simple but extensible directory structure should be consider. Future features should be:
+- Allow Slack notification.
+- Customize Google Calendar events
+- OpenTelemetry
+
+Should have a config package to read environment var and populate a struct there. Centralized the configs should allow easier on-boarding contribution from new contributors.
+
+Should have proper unit-testing, and have mock for Google Calendar to allow testing.
+
+<AI goes here>
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/nvat/tgifreezeday.git
-cd tgifreezeday
-
-# Build the application
-go build -o tgifreezeday ./cmd/tgifreezeday
-
-# Run the application
-./tgifreezeday
-```
+<AI goes here>
 
 ## Configuration
 
-Copy the example configuration file and modify it for your environment:
-
-```bash
-cp config.yaml.example config.yaml
-# Edit config.yaml with your settings
-```
-
-The configuration file has two main sections:
-
-1. **data_source**: Defines the holiday calendar source (currently Google Calendar) and contains the rules for determining freeze days
-2. **destination**: Defines where freeze periods should be created/announced (Google Calendar or Slack)
-
-Example:
-
-```yaml
-# Data source configuration
-data_source:
-  type: google_calendar
-  config:
-    credentials_file: "/path/to/your/google/credentials.json"
-    calendar_id: "your_calendar_id_with_holidays@group.calendar.google.com"
-  rules:
-    - expression: "today.isHoliday()"
-    - expression: "tomorrow.isHoliday()"
-    - expression: "today.isWeekend()"
-
-# Destination configuration
-destination:
-  type: google_calendar
-  config:
-    credentials_file: "/path/to/your/google/credentials.json"
-    calendar_id: "your_primary_calendar@gmail.com"
-```
-
-### Setting up Google Calendar API
-
-1. Create a project in Google Cloud Platform
-2. Enable the Google Calendar API
-3. Create a service account with appropriate permissions
-4. Download the credentials JSON file
-5. Share your calendars with the service account email
-
-## Usage
-
-```bash
-# Run with default configuration (looks for config.yaml)
-./tgifreezeday
-
-# Specify a custom config file
-./tgifreezeday --config=custom-config.yaml
-
-# Check if today is a freeze day
-./tgifreezeday --check-today
-
-# List upcoming freeze days
-./tgifreezeday --list-upcoming
-
-# List upcoming freeze days for next 14 days
-./tgifreezeday --list-upcoming --days=14
-```
-
-## Development
-
-### Running with Docker
-
-You can use Docker to run the application:
-
-```bash
-# Build the Docker image
-docker build -t tgifreezeday .
-
-# Run the container with your configuration
-docker run -v /path/to/your/config.yaml:/app/config.yaml tgifreezeday
-```
-
-You can also use the provided docker-compose.yml:
-
-```bash
-docker-compose up
-```
-
-### Testing
-
-Run the tests with:
-
-```bash
-go test ./...
-```
+<AI goes here>
+<!-- Environment variable for Google API -->
 
 ## License
 
-MIT License
+Free to use but must include source if distribute or use in internal projects.
 
-## Contributing
+<AI update this>
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## Contribution
+
+<AI update this>
