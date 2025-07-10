@@ -38,7 +38,7 @@ The program will accept the following config to run.
 ```yaml
 readFrom:
   googleCalendar:
-    id: <google calendary id to read>
+    countryCode: <supported country code> # "jpn", "vnm", A-3 ISO 3166 country code
     todayIsFreezeDayIf:
     - [yesterday, today, tomorrow]: # with this block, rules are AND together. To do OR, specify multiple items with same key.
       - isTheFirstBusinessDayOfTheMonth
@@ -51,6 +51,11 @@ writeTo:
       default:
         summary: "string|null" # if `null`, use default message
 ```
+
+#### Supported Countries:
+
+- **jpn** - Japanese public holidays (filters out cultural observances like Tanabata)
+- **vnm**
 
 #### Example:
 
@@ -66,7 +71,7 @@ The folloiwng config should reflect the above rule:
 ```yaml
 readFrom:
   googleCalendar:
-    id: <google calendar id to read from>
+    countryCode: "jpn"
     todayIsFreezeDayIf:
       today:
       - isTheFirstBusinessDayOfTheMonth

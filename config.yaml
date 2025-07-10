@@ -1,6 +1,6 @@
 readFrom:
   googleCalendar:
-    id: "example-holidays@example.com"
+    countryCode: "jpn"
     todayIsFreezeDayIf:
       - today:
         - isTheFirstBusinessDayOfTheMonth

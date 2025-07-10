@@ -3,53 +3,57 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 
+	"github.com/nvat/tgifreezeday/internal/consts"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	// GoogleAppClientCredJSONPath is the environment variable name for Google credentials path
-	GoogleAppClientCredJSONPath = "GOOGLE_APP_CLIENT_CRED_JSON_PATH"
+	GoogleAppClientCredJSONPathEnv = "GOOGLE_APP_CLIENT_CRED_JSON_PATH"
 )
 
-// Config is the root config struct matching the YAML example in README
-// Only base fields for now
-
-type Config struct {
-	ReadFrom struct {
-		GoogleCalendar struct {
-			ID                 string                `yaml:"id"`
-			TodayIsFreezeDayIf []map[string][]string `yaml:"todayIsFreezeDayIf"`
-		} `yaml:"googleCalendar"`
-	} `yaml:"readFrom"`
-	WriteTo struct {
-		GoogleCalendar struct {
-			ID                 string `yaml:"id"`
-			IfTodayIsFreezeDay struct {
-				Default struct {
-					Summary *string `yaml:"summary"`
-				} `yaml:"default"`
-			} `yaml:"ifTodayIsFreezeDay"`
-		} `yaml:"googleCalendar"`
-	} `yaml:"writeTo"`
+type ReadFromConfig struct {
+	GoogleCalendar GoogleCalendarReadConfig `yaml:"googleCalendar"`
 }
 
-// Load loads config from file/env
+type GoogleCalendarReadConfig struct {
+	// ISO 3166 A-3 country code
+	CountryCode        string                `yaml:"countryCode"`
+	TodayIsFreezeDayIf []map[string][]string `yaml:"todayIsFreezeDayIf"`
+}
+
+type WriteToConfig struct {
+	GoogleCalendar GoogleCalendarWriteConfig `yaml:"googleCalendar"`
+}
+
+type GoogleCalendarWriteConfig struct {
+	ID                 string                   `yaml:"id"`
+	IfTodayIsFreezeDay IfTodayIsFreezeDayConfig `yaml:"ifTodayIsFreezeDay"`
+}
+
+type IfTodayIsFreezeDayConfig struct {
+	Default DefaultConfig `yaml:"default"`
+}
+
+type DefaultConfig struct {
+	Summary string `yaml:"summary"`
+}
+
+type Config struct {
+	ReadFrom ReadFromConfig `yaml:"readFrom"`
+	WriteTo  WriteToConfig  `yaml:"writeTo"`
+}
+
 func Load() (*Config, error) {
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
 		configPath = "config.yaml"
 	}
 
-	// Check if Google credentials are set
-	if os.Getenv(GoogleAppClientCredJSONPath) == "" {
-		return nil, fmt.Errorf("%s environment variable is required", GoogleAppClientCredJSONPath)
-	}
-
-	// Read config file
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	var config Config
@@ -57,21 +61,38 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Validate required fields
-	if config.ReadFrom.GoogleCalendar.ID == "" {
-		return nil, fmt.Errorf("readFrom.googleCalendar.id is required")
-	}
-	if config.WriteTo.GoogleCalendar.ID == "" {
-		return nil, fmt.Errorf("writeTo.googleCalendar.id is required")
-	}
-	if len(config.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) == 0 {
-		return nil, fmt.Errorf("readFrom.googleCalendar.todayIsFreezeDayIf cannot be empty")
-	}
-
 	return &config, nil
 }
 
-// GetCredentialsPath returns the path to Google credentials file
-func GetCredentialsPath() string {
-	return os.Getenv(GoogleAppClientCredJSONPath)
+// ValidateCountry checks if a country is supported
+func ValidateCountry(country string) error {
+	if !slices.Contains(consts.SupportedCountries, country) {
+		return fmt.Errorf("unsupported country: %s. Supported countries: %v", country, consts.SupportedCountries)
+	}
+	return nil
+}
+
+func (c *Config) Validate() error {
+	// Validate Google credentials path
+	credPath := os.Getenv(GoogleAppClientCredJSONPathEnv)
+	if credPath == "" {
+		return fmt.Errorf("environment variable %s is required", GoogleAppClientCredJSONPathEnv)
+	}
+
+	// Validate credentials file exists
+	if _, err := os.Stat(credPath); os.IsNotExist(err) {
+		return fmt.Errorf("google credentials file not found: %s", credPath)
+	}
+
+	// Validate country
+	if err := ValidateCountry(c.ReadFrom.GoogleCalendar.CountryCode); err != nil {
+		return fmt.Errorf("invalid readFrom.googleCalendar.countryCode: %w", err)
+	}
+
+	// Validate freeze day rules
+	if len(c.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) == 0 {
+		return fmt.Errorf("readFrom.googleCalendar.todayIsFreezeDayIf cannot be empty")
+	}
+
+	return nil
 }

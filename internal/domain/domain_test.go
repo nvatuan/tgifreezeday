@@ -3,41 +3,9 @@ package domain
 import (
 	"testing"
 	"time"
+
+	"github.com/nvat/tgifreezeday/internal/helpers"
 )
-
-// test if DaysInMonth is returning the correct number of days in a month across years
-func Test_DaysInMonth(t *testing.T) {
-	tests := []struct {
-		dateAnchor time.Time
-		expected   int
-	}{
-		{time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), 31},
-		{time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC), 29},
-		{time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), 31},
-		{time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC), 30},
-		{time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC), 31},
-		{time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), 30},
-		{time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC), 31},
-		{time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC), 31},
-		{time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC), 30},
-		{time.Date(2024, 10, 1, 0, 0, 0, 0, time.UTC), 31},
-		{time.Date(2024, 11, 1, 0, 0, 0, 0, time.UTC), 30},
-		{time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC), 31},
-		// non leap year
-		{time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC), 28},
-		// leap year in far future
-		{time.Date(2100, 2, 1, 0, 0, 0, 0, time.UTC), 28},
-		{time.Date(2200, 2, 1, 0, 0, 0, 0, time.UTC), 28},
-		{time.Date(2400, 2, 1, 0, 0, 0, 0, time.UTC), 29},
-	}
-
-	for _, test := range tests {
-		actual := daysInMonth(test.dateAnchor)
-		if actual != test.expected {
-			t.Errorf("daysInMonth(%v) = %d, expected %d", test.dateAnchor, actual, test.expected)
-		}
-	}
-}
 
 // mock data for testing
 var (
@@ -47,8 +15,8 @@ var (
 )
 
 func init() {
-	mockMonthDays = make([]MonthDay, 0, daysInMonth(mockDateAnchor)) // start with 0 length, capacity for all days
-	for i := 1; i <= daysInMonth(mockDateAnchor); i++ {
+	mockMonthDays = make([]MonthDay, 0, helpers.DaysInMonth(mockDateAnchor)) // start with 0 length, capacity for all days
+	for i := 1; i <= helpers.DaysInMonth(mockDateAnchor); i++ {
 		mockMonthDays = append(
 			mockMonthDays,
 			*NewMonthDay(
@@ -62,7 +30,7 @@ func init() {
 func Test_MonthCalendar_Validate_Fail_NotEnoughDays(t *testing.T) {
 	tmpMonthCalendar := MonthCalendar{
 		Month: mockMonthCalendar.Month,
-		Days:  make([]MonthDay, daysInMonth(mockDateAnchor)-1),
+		Days:  make([]MonthDay, helpers.DaysInMonth(mockDateAnchor)-1),
 	}
 	for i := 0; i < len(tmpMonthCalendar.Days)-1; i++ {
 		tmpMonthCalendar.Days[i] = mockMonthCalendar.Days[i]
@@ -81,7 +49,7 @@ func Test_MonthCalendar_Validate_Fail_NotEnoughDays(t *testing.T) {
 func Test_MonthCalendar_Validate_Fail_NotInChronologicalOrder(t *testing.T) {
 	tmpMonthCalendar := MonthCalendar{
 		Month: mockMonthCalendar.Month,
-		Days:  make([]MonthDay, daysInMonth(mockDateAnchor)),
+		Days:  make([]MonthDay, helpers.DaysInMonth(mockDateAnchor)),
 	}
 	for i := 0; i < len(tmpMonthCalendar.Days); i++ {
 		tmpMonthCalendar.Days[i] = mockMonthCalendar.Days[i]

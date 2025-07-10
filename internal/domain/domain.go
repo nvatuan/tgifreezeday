@@ -3,6 +3,8 @@ package domain
 import (
 	"fmt"
 	"time"
+
+	"github.com/nvat/tgifreezeday/internal/helpers"
 )
 
 // Domain Calendar object. Should be mapped from any Calendar source to this.
@@ -34,12 +36,8 @@ func NewMonthCalendar(
 	}
 }
 
-func daysInMonth(dateAnchor time.Time) int {
-	return time.Date(dateAnchor.Year(), dateAnchor.Month()+1, 0, 0, 0, 0, 0, dateAnchor.Location()).Day()
-}
-
 func (c *MonthCalendar) Validate() (bool, error) {
-	expectedDaysInMonth := daysInMonth(c.dateAnchor)
+	expectedDaysInMonth := helpers.DaysInMonth(c.dateAnchor)
 
 	if len(c.Days) != expectedDaysInMonth {
 		return false, fmt.Errorf("for month %s, expected %d days, got %d", c.Month, expectedDaysInMonth, len(c.Days))
