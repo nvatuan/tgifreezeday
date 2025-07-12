@@ -3,9 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
-	"slices"
 
-	"github.com/nvat/tgifreezeday/internal/consts"
+	"github.com/nvat/tgifreezeday/internal/helpers"
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,7 +36,7 @@ type IfTodayIsFreezeDayConfig struct {
 }
 
 type DefaultConfig struct {
-	Summary string `yaml:"summary"`
+	Summary *string `yaml:"summary"`
 }
 
 type Config struct {
@@ -45,7 +44,7 @@ type Config struct {
 	WriteTo  WriteToConfig  `yaml:"writeTo"`
 }
 
-func Load() (*Config, error) {
+func LoadWithDefault() (*Config, error) {
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
 		configPath = "config.yaml"
@@ -56,43 +55,23 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
+	return LoadWithDefaultFromByteArray(data)
+}
+
+func LoadWithDefaultFromByteArray(data []byte) (*Config, error) {
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
+	config.SetDefault()
 	return &config, nil
 }
 
-// ValidateCountry checks if a country is supported
-func ValidateCountry(country string) error {
-	if !slices.Contains(consts.SupportedCountries, country) {
-		return fmt.Errorf("unsupported country: %s. Supported countries: %v", country, consts.SupportedCountries)
-	}
-	return nil
-}
+const defaultSummary = "Today is FREEZE-DAY. no PROD operation is allowed."
 
-func (c *Config) Validate() error {
-	// Validate Google credentials path
-	credPath := os.Getenv(GoogleAppClientCredJSONPathEnv)
-	if credPath == "" {
-		return fmt.Errorf("environment variable %s is required", GoogleAppClientCredJSONPathEnv)
+func (c *Config) SetDefault() {
+	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary == nil {
+		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary = helpers.StringPtr(defaultSummary)
 	}
-
-	// Validate credentials file exists
-	if _, err := os.Stat(credPath); os.IsNotExist(err) {
-		return fmt.Errorf("google credentials file not found: %s", credPath)
-	}
-
-	// Validate country
-	if err := ValidateCountry(c.ReadFrom.GoogleCalendar.CountryCode); err != nil {
-		return fmt.Errorf("invalid readFrom.googleCalendar.countryCode: %w", err)
-	}
-
-	// Validate freeze day rules
-	if len(c.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) == 0 {
-		return fmt.Errorf("readFrom.googleCalendar.todayIsFreezeDayIf cannot be empty")
-	}
-
-	return nil
 }
