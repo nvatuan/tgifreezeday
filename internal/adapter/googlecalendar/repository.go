@@ -14,8 +14,8 @@ import (
 
 // Repository implements the CalendarRepository interface for Google Calendar
 type Repository struct {
-	service    *calendar.Service
-	calendarID string
+	service        *calendar.Service
+	readCalendarID string
 }
 
 // NewRepository creates a new Google Calendar repository for holiday calendar
@@ -25,19 +25,19 @@ func NewRepository(ctx context.Context, credentialsPath, countryCode string) (*R
 		return nil, fmt.Errorf("failed to create calendar service: %w", err)
 	}
 
-	calendarID, err := GetHolidayCalendarId(countryCode)
+	readCalendarID, err := GetHolidayCalendarId(countryCode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get holiday calendar ID: %w", err)
 	}
 
 	return &Repository{
-		service:    service,
-		calendarID: calendarID,
+		service:        service,
+		readCalendarID: readCalendarID,
 	}, nil
 }
 
 // GetMonthCalendar fetches events for a month and maps them to MonthCalendar domain model
-func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.TGIFMonthCalendar, error) {
+func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.MonthCalendar, error) {
 	// Get the first and last day of the month
 	year, month, _ := dateAnchor.Date()
 	location := dateAnchor.Location()
@@ -67,14 +67,14 @@ func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.TGIFMonthCa
 
 	// Build MonthDay slice for the entire month
 	daysInMonth := helpers.DaysInMonth(dateAnchor)
-	monthDays := make([]domain.TGIFMonthDay, 0, daysInMonth)
+	monthDays := make([]domain.MonthDay, 0, daysInMonth)
 
 	for day := 1; day <= daysInMonth; day++ {
 		currentDate := time.Date(year, month, day, 0, 0, 0, 0, location)
 		dateKey := helpers.DateKey(currentDate)
 
 		isHoliday := holidayMap[dateKey]
-		monthDay := domain.NewTGIFMonthDay(currentDate, isHoliday)
+		monthDay := domain.NewMonthDay(currentDate, isHoliday)
 		monthDays = append(monthDays, *monthDay)
 	}
 
@@ -91,7 +91,7 @@ func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.TGIFMonthCa
 
 // fetchEvents retrieves events from Google Calendar within the specified time range
 func (r *Repository) fetchEvents(timeMin, timeMax time.Time) ([]*calendar.Event, error) {
-	call := r.service.Events.List(r.calendarID).
+	call := r.service.Events.List(r.readCalendarID).
 		TimeMin(timeMin.Format(time.RFC3339)).
 		TimeMax(timeMax.Format(time.RFC3339)).
 		SingleEvents(true).

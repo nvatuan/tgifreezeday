@@ -4,10 +4,7 @@ import (
 	"time"
 )
 
-type TGIFReadCalendarRepository interface {
-	GetMonthCalendar(dateAnchor time.Time) (*TGIFMonthCalendar, error)
-}
-
-type TGIFWriteCalendarRepository interface {
+type TGIFCalendarRepository interface {
+	GetMonthCalendar(dateAnchor time.Time) (*MonthCalendar, error)
 	WriteBlockerOnDate(date time.Time, summary string) error
 }

@@ -12,31 +12,31 @@ import (
 // - is holiday or not
 // - is weekends or not
 // For ease of calculation, a Calendar should have all days of the month it is representing
-type TGIFMonthCalendar struct {
+type MonthCalendar struct {
 	// The time.Time object that this Calendar is anchored to. The Month information is the only important information, but a time.Time object is used for ease of calculation.
 	dateAnchor  time.Time
 	isProcessed bool
 
-	Month time.Month     // The month of the calendar.
-	Days  []TGIFMonthDay // Should be 28,29,30,31 days depending on the month.
+	Month time.Month // The month of the calendar.
+	Days  []MonthDay // Should be 28,29,30,31 days depending on the month.
 
 	// will be set after MonthCalendar is processed
-	FirstBusinessDay *TGIFMonthDay
-	LastBusinessDay  *TGIFMonthDay
+	FirstBusinessDay *MonthDay
+	LastBusinessDay  *MonthDay
 }
 
 func NewMonthCalendar(
 	dateAnchor time.Time,
-	days []TGIFMonthDay,
-) *TGIFMonthCalendar {
-	return &TGIFMonthCalendar{
+	days []MonthDay,
+) *MonthCalendar {
+	return &MonthCalendar{
 		dateAnchor: dateAnchor,
 		Month:      dateAnchor.Month(),
 		Days:       days,
 	}
 }
 
-func (c *TGIFMonthCalendar) Validate() (bool, error) {
+func (c *MonthCalendar) Validate() (bool, error) {
 	expectedDaysInMonth := helpers.DaysInMonth(c.dateAnchor)
 
 	if len(c.Days) != expectedDaysInMonth {
@@ -54,7 +54,7 @@ func (c *TGIFMonthCalendar) Validate() (bool, error) {
 
 // Process() calculate the necessary info after filling the MonthCalendar.Days field
 // For now, this sets the FirstBusinessDay and LastBusinessDay fields of the MonthCalendar.
-func (c *TGIFMonthCalendar) Process() error {
+func (c *MonthCalendar) Process() error {
 	if c.isProcessed {
 		return nil
 	}
@@ -76,7 +76,7 @@ func (c *TGIFMonthCalendar) Process() error {
 	return nil
 }
 
-type TGIFMonthDay struct {
+type MonthDay struct {
 	Date time.Time // The date of the day.
 
 	// Initially nil, will be set after MonthCalendar is populated
@@ -86,10 +86,10 @@ type TGIFMonthDay struct {
 	IsNonBusinessDay bool
 }
 
-func NewTGIFMonthDay(date time.Time, isHoliday bool) *TGIFMonthDay {
+func NewMonthDay(date time.Time, isHoliday bool) *MonthDay {
 	isWeekend := (date.Weekday() == time.Saturday || date.Weekday() == time.Sunday)
 
-	day := &TGIFMonthDay{
+	day := &MonthDay{
 		Date:             date,
 		IsWeekend:        isWeekend,
 		IsHoliday:        isHoliday,
