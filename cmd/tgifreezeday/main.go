@@ -52,7 +52,7 @@ func main() {
 	fmt.Println("tgifreezeday: completed successfully")
 }
 
-func printMonthCalendar(mc *domain.MonthCalendar) {
+func printMonthCalendar(mc *domain.TGIFMonthCalendar) {
 	fmt.Printf("Month: %s\n", mc.Month.String())
 	fmt.Printf("Total days: %d\n", len(mc.Days))
 

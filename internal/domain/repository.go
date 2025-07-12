@@ -1,7 +1,13 @@
 package domain
 
-import "time"
+import (
+	"time"
+)
 
-type CalendarRepository interface {
-	GetMonthCalendar(dateAnchor time.Time) (*MonthCalendar, error)
+type TGIFReadCalendarRepository interface {
+	GetMonthCalendar(dateAnchor time.Time) (*TGIFMonthCalendar, error)
+}
+
+type TGIFWriteCalendarRepository interface {
+	WriteBlockerOnDate(date time.Time, summary string) error
 }

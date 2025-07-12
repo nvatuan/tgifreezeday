@@ -37,7 +37,7 @@ func NewRepository(ctx context.Context, credentialsPath, countryCode string) (*R
 }
 
 // GetMonthCalendar fetches events for a month and maps them to MonthCalendar domain model
-func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.MonthCalendar, error) {
+func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.TGIFMonthCalendar, error) {
 	// Get the first and last day of the month
 	year, month, _ := dateAnchor.Date()
 	location := dateAnchor.Location()
@@ -67,14 +67,14 @@ func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.MonthCalend
 
 	// Build MonthDay slice for the entire month
 	daysInMonth := helpers.DaysInMonth(dateAnchor)
-	monthDays := make([]domain.MonthDay, 0, daysInMonth)
+	monthDays := make([]domain.TGIFMonthDay, 0, daysInMonth)
 
 	for day := 1; day <= daysInMonth; day++ {
 		currentDate := time.Date(year, month, day, 0, 0, 0, 0, location)
 		dateKey := helpers.DateKey(currentDate)
 
 		isHoliday := holidayMap[dateKey]
-		monthDay := domain.NewMonthDay(currentDate, isHoliday)
+		monthDay := domain.NewTGIFMonthDay(currentDate, isHoliday)
 		monthDays = append(monthDays, *monthDay)
 	}
 
