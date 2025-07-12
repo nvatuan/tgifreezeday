@@ -18,7 +18,7 @@ type Repository struct {
 	calendarID string
 }
 
-// NewRepository creates a new Google Calendar repository
+// NewRepository creates a new Google Calendar repository for holiday calendar
 func NewRepository(ctx context.Context, credentialsPath, countryCode string) (*Repository, error) {
 	service, err := calendar.NewService(ctx, option.WithCredentialsFile(credentialsPath))
 	if err != nil {
@@ -57,7 +57,7 @@ func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.MonthCalend
 		eventDate := r.extractEventDate(event)
 		if !eventDate.IsZero() {
 			isHoliday := r.isPublicHoliday(event)
-			dateKey := eventDate.Format("2006-01-02")
+			dateKey := helpers.DateKey(eventDate)
 
 			if isHoliday {
 				holidayMap[dateKey] = true

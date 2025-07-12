@@ -52,6 +52,8 @@ func (c *MonthCalendar) Validate() (bool, error) {
 	return true, nil
 }
 
+// Process() calculate the necessary info after filling the MonthCalendar.Days field
+// For now, this sets the FirstBusinessDay and LastBusinessDay fields of the MonthCalendar.
 func (c *MonthCalendar) Process() error {
 	if c.isProcessed {
 		return nil
