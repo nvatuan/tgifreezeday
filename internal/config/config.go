@@ -19,6 +19,8 @@ type ReadFromConfig struct {
 type GoogleCalendarReadConfig struct {
 	// ISO 3166 A-3 country code
 	CountryCode        string                `yaml:"countryCode"`
+	LookbackDays       int                   `yaml:"lookbackDays"`
+	LookaheadDays      int                   `yaml:"lookaheadDays"`
 	TodayIsFreezeDayIf []map[string][]string `yaml:"todayIsFreezeDayIf"`
 }
 

@@ -10,7 +10,7 @@ import (
 // SupportedCountry represents a supported country for holiday calendars
 var NationalHolidayCalendarMap = map[string]string{
 	consts.CountryJapan:   "en.japanese#holiday@group.v.calendar.google.com",
-	consts.CountryVietnam: "en.vietnam#holiday@group.v.calendar.google.com",
+	consts.CountryVietnam: "en.vietnamese#holiday@group.v.calendar.google.com",
 }
 
 const (

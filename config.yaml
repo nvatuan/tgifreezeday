@@ -1,6 +1,8 @@
 readFrom:
   googleCalendar:
-    countryCode: "jpn"
+    countryCode: "vnm"
+    lookbackDays: 20
+    lookaheadDays: 60
     todayIsFreezeDayIf:
       - today:
         - isTheFirstBusinessDayOfTheMonth
@@ -10,7 +12,7 @@ readFrom:
         - isNonBusinessDay
 writeTo:
   googleCalendar:
-    id: "example-freeze@example.com"
+    id: "bebc8b1bced02ef763e261264137d00eedf00790a42baa91caffb5598643242b@group.calendar.google.com"
     ifTodayIsFreezeDay:
       default:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed." 

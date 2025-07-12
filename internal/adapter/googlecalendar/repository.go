@@ -44,17 +44,11 @@ func NewRepository(
 	}, nil
 }
 
-// GetMonthCalendar fetches events for a month and maps them to MonthCalendar domain model
-func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.MonthCalendar, error) {
-	// Get the first and last day of the month
-	year, month, _ := dateAnchor.Date()
-	location := dateAnchor.Location()
-
-	firstDay := time.Date(year, month, 1, 0, 0, 0, 0, location)
-	lastDay := time.Date(year, month+1, 0, 23, 59, 59, 999999999, location) // Last moment of the month
-
+// GetFreezeDaysInRange fetches events for a range [start, end), and maps them to TGIFMapping domain model
+// rangeStart is inclusive, rangeEnd is exclusive
+func (r *Repository) GetFreezeDaysInRange(rangeStart, rangeEnd time.Time) (*domain.TGIFMapping, error) {
 	// Fetch events from Google Calendar
-	events, err := r.fetchEvents(firstDay, lastDay)
+	events, err := r.fetchEvents(rangeStart, rangeEnd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch events: %w", err)
 	}
@@ -73,28 +67,22 @@ func (r *Repository) GetMonthCalendar(dateAnchor time.Time) (*domain.MonthCalend
 		}
 	}
 
-	// Build MonthDay slice for the entire month
-	daysInMonth := helpers.DaysInMonth(dateAnchor)
-	monthDays := make([]domain.MonthDay, 0, daysInMonth)
+	tgifMapping := make(domain.TGIFMapping)
+	currDate := rangeStart
+	for currDate.Before(rangeEnd) {
+		dateKey := domain.NewDateKey(currDate)
+		isHoliday := holidayMap[string(dateKey)]
 
-	for day := 1; day <= daysInMonth; day++ {
-		currentDate := time.Date(year, month, day, 0, 0, 0, 0, location)
-		dateKey := helpers.DateKey(currentDate)
+		tgifDay := domain.NewTGIFDay(currDate, &tgifMapping, isHoliday)
+		tgifMapping[dateKey] = tgifDay
 
-		isHoliday := holidayMap[dateKey]
-		monthDay := domain.NewMonthDay(currentDate, isHoliday)
-		monthDays = append(monthDays, *monthDay)
+		currDate = currDate.AddDate(0, 0, 1)
 	}
+	// CRITICAL: Fill month info for first/last business day calculations
+	// This is required for freeze day rules to work properly
+	tgifMapping.FillMonthInfo()
 
-	// Create and return MonthCalendar
-	monthCalendar := domain.NewMonthCalendar(dateAnchor, monthDays)
-
-	// Process the calendar to set first/last business days
-	if err := monthCalendar.Process(); err != nil {
-		return nil, fmt.Errorf("failed to process month calendar: %w", err)
-	}
-
-	return monthCalendar, nil
+	return &tgifMapping, nil
 }
 
 const (

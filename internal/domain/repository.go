@@ -5,6 +5,6 @@ import (
 )
 
 type TGIFCalendarRepository interface {
-	GetMonthCalendar(dateAnchor time.Time) (*MonthCalendar, error)
+	GetFreezeDaysInRange(dateAnchor time.Time) (*TGIFMapping, error)
 	WriteBlockerOnDate(date time.Time, summary string) error
 }
