@@ -11,10 +11,10 @@ func Test_ConfigValidate(t *testing.T) {
 		yaml string
 		want *Config
 	}{
-		{name: "valid", yaml: mock_configYamlValid, want: mockValidParsedConfig},
-		{name: "invalid_countryCode", yaml: mock_configYamlInvalid_countryCode, want: nil},
-		{name: "invalid_unsupportedDate", yaml: mock_configYamlInvalid_unsupportedDate, want: nil},
-		{name: "invalid_unsupportedCheck", yaml: mock_configYamlInvalid_unsupportedCheck, want: nil},
+		{name: "valid", yaml: mockConfigYamlValid, want: mockValidParsedConfig},
+		{name: "invalid_countryCode", yaml: mockConfigYamlInvalidCountryCode, want: nil},
+		{name: "invalid_unsupportedDate", yaml: mockConfigYamlInvalidUnsupportedDate, want: nil},
+		{name: "invalid_unsupportedCheck", yaml: mockConfigYamlInvalidUnsupportedCheck, want: nil},
 	}
 
 	for _, test := range tests {

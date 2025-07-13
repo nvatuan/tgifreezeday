@@ -2,7 +2,7 @@ package config
 
 import "github.com/nvat/tgifreezeday/internal/helpers"
 
-const mock_configYamlValid = `
+const mockConfigYamlValid = `
 shared:
   lookbackDays: 20
   lookaheadDays: 60
@@ -57,7 +57,7 @@ var mockValidParsedConfig = &Config{
 	},
 }
 
-const mock_configYamlInvalid_countryCode = `
+const mockConfigYamlInvalidCountryCode = `
 shared:
   lookbackDays: 20
   lookaheadDays: 60
@@ -79,7 +79,7 @@ writeTo:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed." 
 `
 
-const mock_configYamlInvalid_unsupportedDate = `
+const mockConfigYamlInvalidUnsupportedDate = `
 shared:
   lookbackDays: 20
   lookaheadDays: 60
@@ -99,7 +99,7 @@ writeTo:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed." 
 `
 
-const mock_configYamlInvalid_unsupportedCheck = `
+const mockConfigYamlInvalidUnsupportedCheck = `
 shared:
   lookbackDays: 20
   lookaheadDays: 60

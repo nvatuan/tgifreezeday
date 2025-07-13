@@ -48,35 +48,35 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate Shared block
-	if err := c.Validate_Shared_LookbackAndLookaheadDays(); err != nil {
+	if err := c.ValidateSharedLookbackAndLookaheadDays(); err != nil {
 		return fmt.Errorf("invalid shared.lookbackDays or lookaheadDays: %w", err)
 	}
 
 	// Validate ReadFrom block
 	// // Validate country
-	if err := c.Validate_ReadFrom_GoogleCalendar_CountryCode(); err != nil {
+	if err := c.ValidateReadFromGoogleCalendarCountryCode(); err != nil {
 		return fmt.Errorf("invalid readFrom.googleCalendar.countryCode: %w", err)
 	}
 
 	// // Validate freeze day rules
-	if err := c.Validate_ReadFrom_GoogleCalendar_TodayIsFreezeDayIf(); err != nil {
+	if err := c.ValidateReadFromGoogleCalendarTodayIsFreezeDayIf(); err != nil {
 		return fmt.Errorf("invalid readFrom.googleCalendar.todayIsFreezeDayIf: %w", err)
 	}
 
 	// Validate WriteTo block
 	// // Validate google calendar id
-	if err := c.Validate_WriteTo_GoogleCalendar_ID(); err != nil {
+	if err := c.ValidateWriteToGoogleCalendarID(); err != nil {
 		return fmt.Errorf("invalid writeTo.googleCalendar.id: %w", err)
 	}
 
-	if err := c.SetDefaultAndValidate_WriteTo_GoogleCalendar_IfTodayIsFreezeDay(); err != nil {
+	if err := c.SetDefaultAndValidateWriteToGoogleCalendarIfTodayIsFreezeDay(); err != nil {
 		return fmt.Errorf("invalid writeTo.googleCalendar.ifTodayIsFreezeDay: %w", err)
 	}
 
 	return nil
 }
 
-func (c *Config) Validate_ReadFrom_GoogleCalendar_TodayIsFreezeDayIf() error {
+func (c *Config) ValidateReadFromGoogleCalendarTodayIsFreezeDayIf() error {
 	if len(c.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) == 0 {
 		return fmt.Errorf("readFrom.googleCalendar.todayIsFreezeDayIf cannot be empty")
 	}
@@ -96,7 +96,7 @@ func (c *Config) Validate_ReadFrom_GoogleCalendar_TodayIsFreezeDayIf() error {
 }
 
 // ValidateCountry checks if a country is supported
-func (c *Config) Validate_ReadFrom_GoogleCalendar_CountryCode() error {
+func (c *Config) ValidateReadFromGoogleCalendarCountryCode() error {
 	country := c.ReadFrom.GoogleCalendar.CountryCode
 	if !slices.Contains(consts.SupportedCountries, country) {
 		return fmt.Errorf("unsupported country: %s. Supported countries: %v", country, consts.SupportedCountries)
@@ -105,7 +105,7 @@ func (c *Config) Validate_ReadFrom_GoogleCalendar_CountryCode() error {
 }
 
 // Validate lookback and lookahead days
-func (c *Config) Validate_Shared_LookbackAndLookaheadDays() error {
+func (c *Config) ValidateSharedLookbackAndLookaheadDays() error {
 	if c.Shared.LookbackDays < 20 {
 		return fmt.Errorf("shared.lookbackDays cannot be less than 20")
 	}
@@ -122,7 +122,7 @@ func (c *Config) Validate_Shared_LookbackAndLookaheadDays() error {
 	return nil
 }
 
-func (c *Config) Validate_WriteTo_GoogleCalendar_ID() error {
+func (c *Config) ValidateWriteToGoogleCalendarID() error {
 	if c.WriteTo.GoogleCalendar.ID == "" {
 		return fmt.Errorf("writeTo.googleCalendar.id cannot be empty")
 	}
@@ -131,7 +131,7 @@ func (c *Config) Validate_WriteTo_GoogleCalendar_ID() error {
 
 // Validate the event to write on the WriteTo calendar
 // SIDE EFFECT!! if summary is nil, set it to default message
-func (c *Config) SetDefaultAndValidate_WriteTo_GoogleCalendar_IfTodayIsFreezeDay() error {
+func (c *Config) SetDefaultAndValidateWriteToGoogleCalendarIfTodayIsFreezeDay() error {
 	// enforce limits so that it won't be rejected by Google Calendar API
 	if len([]rune(*c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary)) > 250 {
 		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.summary cannot be longer than 250 characters")

@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	GoogleAppClientCredJSONPathEnv = "GOOGLE_APP_CLIENT_CRED_JSON_PATH"
+	GoogleAppClientCredJSONPathEnv = "GOOGLE_APP_CLIENT_CRED_JSON_PATH" // nolint:gosec
 )
 
 type SharedConfig struct {

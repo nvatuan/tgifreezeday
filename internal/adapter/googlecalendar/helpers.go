@@ -7,26 +7,23 @@ import (
 	"google.golang.org/api/calendar/v3"
 )
 
-// SupportedCountry represents a supported country for holiday calendars
-var NationalHolidayCalendarMap = map[string]string{
-	consts.CountryJapan:   "en.japanese#holiday@group.v.calendar.google.com",
-	consts.CountryVietnam: "en.vietnamese#holiday@group.v.calendar.google.com",
-}
-
 const (
-	// if the calendar in English, the following descriptions are used to determine if
-	// the day is a public holiday or observance
-	en_PublicHoliday = "Public holiday"
-	en_Observance    = "Observance"
+	// Holiday types in English (Google Calendar API returns these)
+	enPublicHoliday = "Public holiday"
+	enObservance    = "Observance"
 )
 
-// GetHolidayCalendarId returns the calendar ID for a country
-func GetHolidayCalendarId(country string) (string, error) {
-	if v, ok := NationalHolidayCalendarMap[country]; !ok {
-		return "", fmt.Errorf("unsupported country: %s. Supported countries: japan, vietnam", country)
-	} else {
-		return v, nil
+var countryToCalendarID = map[string]string{
+	"jpn": "ja.japanese#holiday@group.v.calendar.google.com",
+	"vnm": "vi.vietnamese#holiday@group.v.calendar.google.com",
+}
+
+func GetHolidayCalendarID(country string) (string, error) {
+	v, ok := countryToCalendarID[country]
+	if !ok {
+		return "", fmt.Errorf("country %s is not supported. Supported countries: %v", country, consts.SupportedCountries)
 	}
+	return v, nil
 }
 
 // isPublicHoliday determines if an event represents an actual public holiday vs observance
@@ -36,12 +33,12 @@ func (r *Repository) isPublicHoliday(event *calendar.Event) bool {
 		desc := event.Description
 
 		// "Public holiday" = actual non-working days
-		if desc == en_PublicHoliday {
+		if desc == enPublicHoliday {
 			return true
 		}
 
 		// "Observance" = cultural/festival days (still working days)
-		if desc == en_Observance {
+		if desc == enObservance {
 			return false
 		}
 	}

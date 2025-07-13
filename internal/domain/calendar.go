@@ -10,13 +10,12 @@ import (
 
 var logger = logging.GetLogger()
 
+const notAvailable = "n/a"
+
 // Map from date key to TGIFDay
 // Allows quick lookup of TGIFDay by date key, and traverse yesterday, today, tomorrow
 type DateKey string
 type TGIFMapping map[DateKey]*TGIFDay
-
-const lookbackDays = 20
-const lookaheadDays = 20
 
 type TGIFDay struct {
 	parentMapping *TGIFMapping
@@ -88,14 +87,14 @@ func (m *TGIFMapping) FillMonthInfo() {
 			dateKey := NewDateKey(currDate)
 
 			// entry does not exist in the mapping
-			if v, ok := (*m)[dateKey]; !ok {
-				monthResults[month][keyFirstBusinessDay] = "n/a"
+			v, ok := (*m)[dateKey]
+			if !ok {
+				monthResults[month][keyFirstBusinessDay] = notAvailable
 				break
-			} else {
-				if v.IsBusinessDay {
-					monthResults[month][keyFirstBusinessDay] = string(dateKey)
-					break
-				}
+			}
+			if v.IsBusinessDay {
+				monthResults[month][keyFirstBusinessDay] = string(dateKey)
+				break
 			}
 		}
 
@@ -107,14 +106,14 @@ func (m *TGIFMapping) FillMonthInfo() {
 			}
 			// ---
 			dateKey := NewDateKey(currDate)
-			if v, ok := (*m)[dateKey]; !ok {
-				monthResults[month][keyLastBusinessDay] = "n/a"
+			v, ok := (*m)[dateKey]
+			if !ok {
+				monthResults[month][keyLastBusinessDay] = notAvailable
 				break
-			} else {
-				if v.IsBusinessDay {
-					monthResults[month][keyLastBusinessDay] = string(dateKey)
-					break
-				}
+			}
+			if v.IsBusinessDay {
+				monthResults[month][keyLastBusinessDay] = string(dateKey)
+				break
 			}
 		}
 	}
@@ -126,7 +125,7 @@ func (m *TGIFMapping) FillMonthInfo() {
 			if val == "" {
 				panic(fmt.Sprintf("first business day of month %s is not yet computed", month))
 			}
-			if val == "n/a" {
+			if val == notAvailable {
 				day.IsFirstBusinessDayOfMonth = helpers.BoolPtr(false) // cannot be computed, set to false.
 			} else { // datekey, check if this date matches the datekey.
 				day.IsFirstBusinessDayOfMonth = helpers.BoolPtr(string(day.Key) == val)
@@ -137,7 +136,7 @@ func (m *TGIFMapping) FillMonthInfo() {
 			if val == "" {
 				panic(fmt.Sprintf("last business day of month %s is not yet computed", month))
 			}
-			if val == "n/a" {
+			if val == notAvailable {
 				day.IsLastBusinessDayOfMonth = helpers.BoolPtr(false) // cannot be computed, set to false.
 			} else { // datekey, check if this date matches the datekey.
 				day.IsLastBusinessDayOfMonth = helpers.BoolPtr(string(day.Key) == val)
@@ -148,12 +147,12 @@ func (m *TGIFMapping) FillMonthInfo() {
 
 func (d *TGIFDay) Offset(offsetDays int) *TGIFDay {
 	offsetKey := NewDateKey(d.Date.AddDate(0, 0, offsetDays))
-	if v, ok := (*d.parentMapping)[offsetKey]; !ok {
+	v, ok := (*d.parentMapping)[offsetKey]
+	if !ok {
 		logger.Warnf("parentMapping does not have key %s", offsetKey)
 		return nil
-	} else {
-		return v
 	}
+	return v
 }
 
 func (d *TGIFDay) Yesterday() *TGIFDay {

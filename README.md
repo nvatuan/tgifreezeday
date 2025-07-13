@@ -3,7 +3,7 @@
 A Go application that helps announce production freeze days to ensure safe deployments by:
 
 1. Fetching holidays and special events from Google Calendar
-2. Updating a specific calendar with freeze days information
+2. Updating a specific calendar with freeze days information based on rules set by config.yaml
 
 ## Features
 
@@ -176,40 +176,11 @@ make wipe-blockers
 
 ## Structure
 
-Use golang. A simple but extensible directory structure should be consider. Future features should be:
-- Allow Slack notification.
-- Customize Google Calendar events
-- OpenTelemetry
-
-Should have a config package to read environment var and populate a struct there. Centralized the configs should allow easier on-boarding contribution from new contributors.
-
-Should have proper unit-testing, and have mock for Google Calendar to allow testing.
-
-```
-tgifreezeday/
-├── cmd/
-│   └── tgifreezeday/
-│       └── main.go              # Application entrypoint
-├── internal/
-│   ├── config/
-│   │   └── config.go            # Config loading and validation
-│   ├── calendar/
-│   │   └── calendar.go          # Google Calendar logic, business day rules
-│   ├── freeze/
-│   │   └── freeze.go            # Freeze day calculation logic
-│   ├── events/
-│   │   └── events.go            # Event creation/deletion logic
-│   └── mock/
-│       └── mock_calendar.go     # Test mocks
-├── pkg/                         # Reusable packages (if any)
-├── go.mod
-├── go.sum
-└── README.md
-```
+<< NEED UPDATE >>
 
 ## Installation
 
-- Requires Go 1.20+
+- Requires Go 1.24+
 - Clone repo, run `go build ./cmd/tgifreezeday`
 - Set up Google API credentials (see below)
 - Run binary with config file or env vars
@@ -217,6 +188,9 @@ tgifreezeday/
 ## Configuration
 
 - Set `GOOGLE_APP_CLIENT_CRED_JSON_PATH` to your service account JSON
+  - For ReadFrom: need to enable Calendar API in your Google Project
+  - For WriteTo: need to add the permissions of service account handler to your target calendar.
+
 - Set `LOG_LEVEL` to control logging verbosity (debug, info, warn, error, fatal, panic). Default: info
 - Set `LOG_FORMAT` to control log output format (json, text, colored). Default: json
 - Optionally set `CONFIG_PATH` to your YAML config file

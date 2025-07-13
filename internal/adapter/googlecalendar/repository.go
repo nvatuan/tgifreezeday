@@ -33,7 +33,7 @@ func NewRepository(
 		return nil, fmt.Errorf("failed to create calendar service: %w", err)
 	}
 
-	readCalendarID, err := GetHolidayCalendarId(countryCode)
+	readCalendarID, err := GetHolidayCalendarID(countryCode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get holiday calendar ID: %w", err)
 	}
