@@ -14,6 +14,86 @@ import (
 )
 
 func main() {
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+	switch command {
+	case "sync":
+		syncCommand()
+	case "wipe-blockers":
+		wipeBlockersCommand()
+	default:
+		fmt.Printf("Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Println("Usage: tgifreezeday <command>")
+	fmt.Println("")
+	fmt.Println("Commands:")
+	fmt.Println("  sync           Sync freeze day blockers to calendar")
+	fmt.Println("  wipe-blockers  Remove all existing blockers in range (specified by lookback-lookahead in config.yaml)")
+}
+
+func syncCommand() {
+	cfg, repo := setupConfigAndRepo()
+
+	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.ReadFrom.GoogleCalendar.LookbackDays)
+	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.ReadFrom.GoogleCalendar.LookaheadDays)
+
+	log.Printf("tgifreezeday sync: fetching freeze days from %s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"))
+
+	tgifMapping, err := repo.GetFreezeDaysInRange(rangeStart, rangeEnd)
+	if err != nil {
+		log.Fatalf("Failed to get freeze days in range: %v", err)
+	}
+
+	log.Printf("tgifreezeday sync: got %d freeze days in range", len(*tgifMapping))
+	debugTgifMapping(tgifMapping)
+
+	log.Printf("tgifreezeday sync: wiping existing blockers in range")
+	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
+		log.Fatalf("Failed to wipe blockers: %v", err)
+	}
+
+	freezeDayCount := 0
+	for _, day := range *tgifMapping {
+		if day.IsTodayFreezeDay(cfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) {
+			freezeDayCount++
+			summary := *cfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary
+			log.Printf("tgifreezeday sync: creating blocker for freeze day %s", day.Date.Format("2006-01-02"))
+			err := repo.WriteBlockerOnDate(day.Date, summary)
+			if err != nil {
+				log.Printf("tgifreezeday sync: failed to write blocker on date %s: %v", day.Date.Format("2006-01-02"), err)
+			}
+		}
+	}
+
+	log.Printf("tgifreezeday sync: created %d freeze day blockers", freezeDayCount)
+	fmt.Println("tgifreezeday sync: completed successfully")
+}
+
+func wipeBlockersCommand() {
+	cfg, repo := setupConfigAndRepo()
+
+	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.ReadFrom.GoogleCalendar.LookbackDays)
+	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.ReadFrom.GoogleCalendar.LookaheadDays)
+
+	log.Printf("tgifreezeday wipe-blockers: removing all blockers from %s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"))
+
+	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
+		log.Fatalf("Failed to wipe blockers: %v", err)
+	}
+
+	fmt.Println("tgifreezeday wipe-blockers: completed successfully")
+}
+
+func setupConfigAndRepo() (*config.Config, *googlecalendar.Repository) {
 	// Load configuration
 	cfg, err := config.LoadWithDefault()
 	if err != nil {
@@ -39,39 +119,7 @@ func main() {
 		log.Fatalf("Failed to create Google Calendar repository: %v", err)
 	}
 
-	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.ReadFrom.GoogleCalendar.LookbackDays)
-	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.ReadFrom.GoogleCalendar.LookaheadDays)
-
-	log.Printf("tgifreezeday: fetching freeze days from %s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"))
-
-	tgifMapping, err := repo.GetFreezeDaysInRange(rangeStart, rangeEnd)
-	if err != nil {
-		log.Fatalf("Failed to get freeze days in range: %v", err)
-	}
-
-	log.Printf("tgifreezeday: got %d freeze days in range", len(*tgifMapping))
-	debugTgifMapping(tgifMapping)
-
-	log.Printf("tgifreezeday: wiping existing blockers in range")
-	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
-		log.Fatalf("Failed to wipe blockers: %v", err)
-	}
-
-	freezeDayCount := 0
-	for _, day := range *tgifMapping {
-		if day.IsTodayFreezeDay(cfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) {
-			freezeDayCount++
-			summary := *cfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary
-			log.Printf("tgifreezeday: creating blocker for freeze day %s", day.Date.Format("2006-01-02"))
-			err := repo.WriteBlockerOnDate(day.Date, summary)
-			if err != nil {
-				log.Printf("tgifreezeday: failed to write blocker on date %s: %v", day.Date.Format("2006-01-02"), err)
-			}
-		}
-	}
-
-	log.Printf("tgifreezeday: created %d freeze day blockers", freezeDayCount)
-	fmt.Println("tgifreezeday: completed successfully")
+	return cfg, repo
 }
 
 func debugTgifMapping(tgifMapping *domain.TGIFMapping) {

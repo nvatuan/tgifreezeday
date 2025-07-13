@@ -32,7 +32,19 @@ test:
 .PHONY: run
 run: build
 	@echo "Running $(BINARY_NAME)..."
-	./$(BIN_DIR)/$(BINARY_NAME)
+	./$(BIN_DIR)/$(BINARY_NAME) $(ARGS)
+
+# Sync freeze day blockers to calendar
+.PHONY: sync
+sync: build
+	@echo "Syncing freeze day blockers..."
+	./$(BIN_DIR)/$(BINARY_NAME) sync
+
+# Wipe all blockers in range
+.PHONY: wipe-blockers
+wipe-blockers: build
+	@echo "Wiping all blockers..."
+	./$(BIN_DIR)/$(BINARY_NAME) wipe-blockers
 
 # Install dependencies
 .PHONY: deps
@@ -45,9 +57,11 @@ deps:
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  build    - Build the application to $(BIN_DIR)/"
-	@echo "  clean    - Remove build artifacts"
-	@echo "  test     - Run tests"
-	@echo "  run      - Build and run the application"
-	@echo "  deps     - Install and tidy dependencies"
-	@echo "  help     - Show this help message" 
+	@echo "  build         - Build the application to $(BIN_DIR)/"
+	@echo "  clean         - Remove build artifacts"
+	@echo "  test          - Run tests"
+	@echo "  run           - Build and run the application (use ARGS=\"subcommand\" to pass arguments)"
+	@echo "  sync          - Build and run sync command"
+	@echo "  wipe-blockers - Build and run wipe-blockers command"
+	@echo "  deps          - Install and tidy dependencies"
+	@echo "  help          - Show this help message" 
