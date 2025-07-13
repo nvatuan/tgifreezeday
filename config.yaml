@@ -1,8 +1,9 @@
+shared:
+  lookbackDays: 20
+  lookaheadDays: 20
 readFrom:
   googleCalendar:
     countryCode: "vnm"
-    lookbackDays: 20
-    lookaheadDays: 60
     todayIsFreezeDayIf:
       - today:
         - isTheFirstBusinessDayOfTheMonth

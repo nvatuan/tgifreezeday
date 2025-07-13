@@ -12,6 +12,11 @@ const (
 	GoogleAppClientCredJSONPathEnv = "GOOGLE_APP_CLIENT_CRED_JSON_PATH"
 )
 
+type SharedConfig struct {
+	LookbackDays  int `yaml:"lookbackDays"`
+	LookaheadDays int `yaml:"lookaheadDays"`
+}
+
 type ReadFromConfig struct {
 	GoogleCalendar GoogleCalendarReadConfig `yaml:"googleCalendar"`
 }
@@ -19,8 +24,6 @@ type ReadFromConfig struct {
 type GoogleCalendarReadConfig struct {
 	// ISO 3166 A-3 country code
 	CountryCode        string                `yaml:"countryCode"`
-	LookbackDays       int                   `yaml:"lookbackDays"`
-	LookaheadDays      int                   `yaml:"lookaheadDays"`
 	TodayIsFreezeDayIf []map[string][]string `yaml:"todayIsFreezeDayIf"`
 }
 
@@ -42,6 +45,7 @@ type DefaultConfig struct {
 }
 
 type Config struct {
+	Shared   SharedConfig   `yaml:"shared"`
 	ReadFrom ReadFromConfig `yaml:"readFrom"`
 	WriteTo  WriteToConfig  `yaml:"writeTo"`
 }

@@ -3,6 +3,9 @@ package config
 import "github.com/nvat/tgifreezeday/internal/helpers"
 
 const mock_configYamlValid = `
+shared:
+  lookbackDays: 20
+  lookaheadDays: 60
 readFrom:
   googleCalendar:
     countryCode: "jpn"
@@ -22,6 +25,10 @@ writeTo:
 `
 
 var mockValidParsedConfig = &Config{
+	Shared: SharedConfig{
+		LookbackDays:  20,
+		LookaheadDays: 60,
+	},
 	ReadFrom: ReadFromConfig{
 		GoogleCalendar: GoogleCalendarReadConfig{
 			CountryCode: "jpn",
@@ -51,6 +58,9 @@ var mockValidParsedConfig = &Config{
 }
 
 const mock_configYamlInvalid_countryCode = `
+shared:
+  lookbackDays: 20
+  lookaheadDays: 60
 readFrom:
   googleCalendar:
     countryCode: "vn"
@@ -70,6 +80,9 @@ writeTo:
 `
 
 const mock_configYamlInvalid_unsupportedDate = `
+shared:
+  lookbackDays: 20
+  lookaheadDays: 60
 readFrom:
   googleCalendar:
     countryCode: "vn"
@@ -87,6 +100,9 @@ writeTo:
 `
 
 const mock_configYamlInvalid_unsupportedCheck = `
+shared:
+  lookbackDays: 20
+  lookaheadDays: 60
 readFrom:
   googleCalendar:
     countryCode: "vn"

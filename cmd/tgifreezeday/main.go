@@ -37,14 +37,14 @@ func printUsage() {
 	fmt.Println("")
 	fmt.Println("Commands:")
 	fmt.Println("  sync           Sync freeze day blockers to calendar")
-	fmt.Println("  wipe-blockers  Remove all existing blockers in range (specified by lookback-lookahead in config.yaml)")
+	fmt.Println("  wipe-blockers  Remove all existing blockers in range (specified by shared.lookbackDays/lookaheadDays in config.yaml)")
 }
 
 func syncCommand() {
 	cfg, repo := setupConfigAndRepo()
 
-	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.ReadFrom.GoogleCalendar.LookbackDays)
-	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.ReadFrom.GoogleCalendar.LookaheadDays)
+	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.Shared.LookbackDays)
+	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.Shared.LookaheadDays)
 
 	log.Printf("tgifreezeday sync: fetching freeze days from %s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"))
 
@@ -81,8 +81,8 @@ func syncCommand() {
 func wipeBlockersCommand() {
 	cfg, repo := setupConfigAndRepo()
 
-	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.ReadFrom.GoogleCalendar.LookbackDays)
-	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.ReadFrom.GoogleCalendar.LookaheadDays)
+	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.Shared.LookbackDays)
+	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.Shared.LookaheadDays)
 
 	log.Printf("tgifreezeday wipe-blockers: removing all blockers from %s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"))
 

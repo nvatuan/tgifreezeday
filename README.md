@@ -31,11 +31,21 @@ For version 1, I am for these following features only:
 - Program must fail-fast if not set necessary environment variables
 - Should use client library instead of calling API HTTP requests.
 
-#### Config Format:
+## Commands
+
+The application supports the following commands:
+
+- `tgifreezeday sync` - Full sync: wipe existing blockers and create new ones based on freeze day rules
+- `tgifreezeday wipe-blockers` - Remove all existing blockers in the specified time range
+
+## Config Format:
 
 The program will accept the following config to run.
 
 ```yaml
+shared:
+  lookbackDays: 20     # Days to look back from today (min: 20, max: 60)
+  lookaheadDays: 60    # Days to look ahead from today (min: 20, max: 60)
 readFrom:
   googleCalendar:
     countryCode: <supported country code> # "jpn", "vnm", A-3 ISO 3166 country code
@@ -69,22 +79,44 @@ If your organization has the following rules:
 The folloiwng config should reflect the above rule:
 
 ```yaml
+shared:
+  lookbackDays: 20
+  lookaheadDays: 60
 readFrom:
   googleCalendar:
     countryCode: "jpn"
     todayIsFreezeDayIf:
-      today:
-      - isTheFirstBusinessDayOfTheMonth
-      today:
-      - isTheLastBusinessDayOfTheMonth
-      tomorrow:
-      - isNonBusinessday
+      - today:
+        - isTheFirstBusinessDayOfTheMonth
+      - today:
+        - isTheLastBusinessDayOfTheMonth
+      - tomorrow:
+        - isNonBusinessDay
 writeTo:
   googleCalendar:
     id: <google calendary id to read>
     ifTodayIsFreezeDay:
       default:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed."
+```
+
+## Usage
+
+### Build and Run
+
+```bash
+# Build the application
+make build
+
+# Run sync command (full sync)
+make sync
+
+# Run wipe-blockers command
+make wipe-blockers
+
+# Or run manually
+./bin/tgifreezeday sync
+./bin/tgifreezeday wipe-blockers
 ```
 
 ## Structure

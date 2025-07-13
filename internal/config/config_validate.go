@@ -47,15 +47,15 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("google credentials file not found: %s", credPath)
 	}
 
+	// Validate Shared block
+	if err := c.Validate_Shared_LookbackAndLookaheadDays(); err != nil {
+		return fmt.Errorf("invalid shared.lookbackDays or lookaheadDays: %w", err)
+	}
+
 	// Validate ReadFrom block
 	// // Validate country
 	if err := c.Validate_ReadFrom_GoogleCalendar_CountryCode(); err != nil {
 		return fmt.Errorf("invalid readFrom.googleCalendar.countryCode: %w", err)
-	}
-
-	// // Validate lookback and lookahead days
-	if err := c.Validate_ReadFrom_GoogleCalendar_LookbackAndLookaheadDays(); err != nil {
-		return fmt.Errorf("invalid readFrom.googleCalendar.lookbackDays or lookaheadDays: %w", err)
 	}
 
 	// // Validate freeze day rules
@@ -105,19 +105,19 @@ func (c *Config) Validate_ReadFrom_GoogleCalendar_CountryCode() error {
 }
 
 // Validate lookback and lookahead days
-func (c *Config) Validate_ReadFrom_GoogleCalendar_LookbackAndLookaheadDays() error {
-	if c.ReadFrom.GoogleCalendar.LookbackDays < 20 {
-		return fmt.Errorf("readFrom.googleCalendar.lookbackDays cannot be less than 20")
+func (c *Config) Validate_Shared_LookbackAndLookaheadDays() error {
+	if c.Shared.LookbackDays < 20 {
+		return fmt.Errorf("shared.lookbackDays cannot be less than 20")
 	}
-	if c.ReadFrom.GoogleCalendar.LookaheadDays < 20 {
-		return fmt.Errorf("readFrom.googleCalendar.lookaheadDays cannot be less than 20")
+	if c.Shared.LookaheadDays < 20 {
+		return fmt.Errorf("shared.lookaheadDays cannot be less than 20")
 	}
 
-	if c.ReadFrom.GoogleCalendar.LookbackDays > 60 {
-		return fmt.Errorf("readFrom.googleCalendar.lookbackDays cannot be greater than 60")
+	if c.Shared.LookbackDays > 60 {
+		return fmt.Errorf("shared.lookbackDays cannot be greater than 60")
 	}
-	if c.ReadFrom.GoogleCalendar.LookaheadDays > 60 {
-		return fmt.Errorf("readFrom.googleCalendar.lookaheadDays cannot be greater than 60")
+	if c.Shared.LookaheadDays > 60 {
+		return fmt.Errorf("shared.lookaheadDays cannot be greater than 60")
 	}
 	return nil
 }
