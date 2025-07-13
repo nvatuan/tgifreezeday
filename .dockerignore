@@ -1,0 +1,44 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Documentation
+README.md
+*.md
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+bin/
+dist/
+target/
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# CI/CD files
+.github/workflows/
+
+# Config files (may contain sensitive data)
+config.yaml
+*.env
+.env*
+
+# Test files
+*_test.go
+testdata/
+
+# Development files
+Makefile
+*.log 
