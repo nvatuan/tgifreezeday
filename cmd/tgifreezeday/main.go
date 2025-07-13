@@ -93,7 +93,7 @@ func debugTgifMapping(tgifMapping *domain.TGIFMapping) {
 		log.Printf("DEBUG: Month %s:", monthKey)
 
 		// Sort days by date
-		for i := 0; i < len(days); i++ {
+		for i := range days {
 			for j := i + 1; j < len(days); j++ {
 				if days[i].Date.After(days[j].Date) {
 					days[i], days[j] = days[j], days[i]

@@ -18,6 +18,7 @@ type Repository struct {
 	service         *calendar.Service
 	readCalendarID  string
 	writeCalendarID string
+	calendarTZ      *time.Location
 }
 
 // NewRepository creates a new Google Calendar repository for holiday calendar
@@ -37,10 +38,22 @@ func NewRepository(
 		return nil, fmt.Errorf("failed to get holiday calendar ID: %w", err)
 	}
 
+	// Get calendar timezone
+	cal, err := service.Calendars.Get(writeCalendarID).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get calendar info: %w", err)
+	}
+
+	calendarTZ, err := time.LoadLocation(cal.TimeZone)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse calendar timezone %s: %w", cal.TimeZone, err)
+	}
+
 	return &Repository{
 		service:         service,
 		readCalendarID:  readCalendarID,
 		writeCalendarID: writeCalendarID,
+		calendarTZ:      calendarTZ,
 	}, nil
 }
 
@@ -131,15 +144,18 @@ func (r *Repository) WipeAllBlockersInRange(startDate, endDate time.Time) error 
 }
 
 func (r *Repository) WriteBlockerOnDate(date time.Time, summary string) error {
+	// Convert to calendar timezone for proper display
+	calendarDate := date.In(r.calendarTZ)
+
 	startDateTime := time.Date(
-		date.Year(), date.Month(), date.Day(),
+		calendarDate.Year(), calendarDate.Month(), calendarDate.Day(),
 		defaultStartHour, 0, 0, 0,
-		date.Location())
+		r.calendarTZ)
 
 	endDateTime := time.Date(
-		date.Year(), date.Month(), date.Day(),
+		calendarDate.Year(), calendarDate.Month(), calendarDate.Day(),
 		defaultEndHour, 0, 0, 0,
-		date.Location())
+		r.calendarTZ)
 
 	call := r.service.Events.Insert(r.writeCalendarID, &calendar.Event{
 		Summary:     summary,
