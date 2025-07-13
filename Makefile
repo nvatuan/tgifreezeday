@@ -38,13 +38,13 @@ run: build
 .PHONY: sync
 sync: build
 	@echo "Syncing freeze day blockers..."
-	./$(BIN_DIR)/$(BINARY_NAME) sync
+	LOG_LEVEL=debug LOG_FORMAT=colored ./$(BIN_DIR)/$(BINARY_NAME) sync
 
 # Wipe all blockers in range
 .PHONY: wipe-blockers
 wipe-blockers: build
 	@echo "Wiping all blockers..."
-	./$(BIN_DIR)/$(BINARY_NAME) wipe-blockers
+	LOG_LEVEL=debug LOG_FORMAT=colored ./$(BIN_DIR)/$(BINARY_NAME) wipe-blockers
 
 # Install dependencies
 .PHONY: deps
@@ -64,4 +64,11 @@ help:
 	@echo "  sync          - Build and run sync command"
 	@echo "  wipe-blockers - Build and run wipe-blockers command"
 	@echo "  deps          - Install and tidy dependencies"
-	@echo "  help          - Show this help message" 
+	@echo "  help          - Show this help message"
+	@echo ""
+	@echo "Environment variables:"
+	@echo "  LOG_LEVEL     - Set log level (debug, info, warn, error, fatal, panic). Default: info"
+	@echo "  LOG_FORMAT    - Set log format (json, text, colored). Default: json"
+	@echo "  Examples:"
+	@echo "    LOG_LEVEL=debug make sync"
+	@echo "    LOG_FORMAT=colored LOG_LEVEL=debug make sync" 

@@ -162,8 +162,39 @@ tgifreezeday/
 ## Configuration
 
 - Set `GOOGLE_APP_CLIENT_CRED_JSON_PATH` to your service account JSON
+- Set `LOG_LEVEL` to control logging verbosity (debug, info, warn, error, fatal, panic). Default: info
+- Set `LOG_FORMAT` to control log output format (json, text, colored). Default: json
 - Optionally set `CONFIG_PATH` to your YAML config file
 - See example config in README above
+
+### Log Levels
+
+The application uses structured logging with the following levels:
+- `debug` - Detailed information for debugging
+- `info` - General information about application flow (default)
+- `warn` - Warning messages
+- `error` - Error messages
+- `fatal` - Fatal errors that cause the application to exit
+- `panic` - Panic level (causes panic)
+
+### Log Formats
+
+The application supports different log output formats:
+- `json` - Structured JSON format (default, good for log aggregation)
+- `text` or `keyvalue` - Key-value text format (human-readable)
+- `colored` or `color` - Colored key-value format (good for development)
+
+Examples:
+```bash
+# JSON format (default)
+LOG_LEVEL=debug ./bin/tgifreezeday sync
+
+# Key-value format for human reading
+LOG_FORMAT=text LOG_LEVEL=info ./bin/tgifreezeday sync
+
+# Colored format for development
+LOG_FORMAT=colored LOG_LEVEL=debug ./bin/tgifreezeday sync
+```
 
 ## License
 

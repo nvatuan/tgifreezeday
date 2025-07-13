@@ -2,11 +2,13 @@ package domain
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/nvat/tgifreezeday/internal/helpers"
+	"github.com/nvat/tgifreezeday/internal/logging"
 )
+
+var logger = logging.GetLogger()
 
 // Map from date key to TGIFDay
 // Allows quick lookup of TGIFDay by date key, and traverse yesterday, today, tomorrow
@@ -147,7 +149,7 @@ func (m *TGIFMapping) FillMonthInfo() {
 func (d *TGIFDay) Offset(offsetDays int) *TGIFDay {
 	offsetKey := NewDateKey(d.Date.AddDate(0, 0, offsetDays))
 	if v, ok := (*d.parentMapping)[offsetKey]; !ok {
-		log.Printf("WARN: parentMapping does not have key %s", offsetKey)
+		logger.Warnf("parentMapping does not have key %s", offsetKey)
 		return nil
 	} else {
 		return v

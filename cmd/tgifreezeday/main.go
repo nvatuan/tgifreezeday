@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -11,9 +10,16 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	"github.com/nvat/tgifreezeday/internal/config"
 	"github.com/nvat/tgifreezeday/internal/domain"
+	"github.com/nvat/tgifreezeday/internal/logging"
+	"github.com/sirupsen/logrus"
 )
 
+var logger *logrus.Logger
+
 func main() {
+	// Setup logger
+	logger = logging.GetLogger()
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
@@ -26,7 +32,7 @@ func main() {
 	case "wipe-blockers":
 		wipeBlockersCommand()
 	default:
-		fmt.Printf("Unknown command: %s\n", command)
+		logger.WithField("command", command).Error("Unknown command")
 		printUsage()
 		os.Exit(1)
 	}
@@ -46,19 +52,28 @@ func syncCommand() {
 	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.Shared.LookbackDays)
 	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.Shared.LookaheadDays)
 
-	log.Printf("tgifreezeday sync: fetching freeze days from %s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"))
+	logger.WithFields(logrus.Fields{
+		"command":   "sync",
+		"dateRange": fmt.Sprintf("%s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02")),
+		"lookback":  cfg.Shared.LookbackDays,
+		"lookahead": cfg.Shared.LookaheadDays,
+	}).Info("Fetching freeze days")
 
 	tgifMapping, err := repo.GetFreezeDaysInRange(rangeStart, rangeEnd)
 	if err != nil {
-		log.Fatalf("Failed to get freeze days in range: %v", err)
+		logger.WithError(err).Fatal("Failed to get freeze days in range")
 	}
 
-	log.Printf("tgifreezeday sync: got %d freeze days in range", len(*tgifMapping))
+	logger.WithFields(logrus.Fields{
+		"command":   "sync",
+		"daysFound": len(*tgifMapping),
+	}).Info("Retrieved freeze days")
+
 	debugTgifMapping(tgifMapping)
 
-	log.Printf("tgifreezeday sync: wiping existing blockers in range")
+	logger.WithField("command", "sync").Info("Wiping existing blockers in range")
 	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
-		log.Fatalf("Failed to wipe blockers: %v", err)
+		logger.WithError(err).Fatal("Failed to wipe blockers")
 	}
 
 	freezeDayCount := 0
@@ -66,16 +81,28 @@ func syncCommand() {
 		if day.IsTodayFreezeDay(cfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) {
 			freezeDayCount++
 			summary := *cfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary
-			log.Printf("tgifreezeday sync: creating blocker for freeze day %s", day.Date.Format("2006-01-02"))
+
+			logger.WithFields(logrus.Fields{
+				"command": "sync",
+				"date":    day.Date.Format("2006-01-02"),
+				"summary": summary,
+			}).Info("Creating blocker for freeze day")
+
 			err := repo.WriteBlockerOnDate(day.Date, summary)
 			if err != nil {
-				log.Printf("tgifreezeday sync: failed to write blocker on date %s: %v", day.Date.Format("2006-01-02"), err)
+				logger.WithFields(logrus.Fields{
+					"command": "sync",
+					"date":    day.Date.Format("2006-01-02"),
+				}).WithError(err).Error("Failed to write blocker")
 			}
 		}
 	}
 
-	log.Printf("tgifreezeday sync: created %d freeze day blockers", freezeDayCount)
-	fmt.Println("tgifreezeday sync: completed successfully")
+	logger.WithFields(logrus.Fields{
+		"command":          "sync",
+		"blockersCreated":  freezeDayCount,
+		"totalDaysChecked": len(*tgifMapping),
+	}).Info("Sync completed successfully")
 }
 
 func wipeBlockersCommand() {
@@ -84,25 +111,30 @@ func wipeBlockersCommand() {
 	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.Shared.LookbackDays)
 	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.Shared.LookaheadDays)
 
-	log.Printf("tgifreezeday wipe-blockers: removing all blockers from %s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02"))
+	logger.WithFields(logrus.Fields{
+		"command":   "wipe-blockers",
+		"dateRange": fmt.Sprintf("%s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02")),
+		"lookback":  cfg.Shared.LookbackDays,
+		"lookahead": cfg.Shared.LookaheadDays,
+	}).Info("Removing all blockers")
 
 	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
-		log.Fatalf("Failed to wipe blockers: %v", err)
+		logger.WithError(err).Fatal("Failed to wipe blockers")
 	}
 
-	fmt.Println("tgifreezeday wipe-blockers: completed successfully")
+	logger.WithField("command", "wipe-blockers").Info("Wipe completed successfully")
 }
 
 func setupConfigAndRepo() (*config.Config, *googlecalendar.Repository) {
 	// Load configuration
 	cfg, err := config.LoadWithDefault()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.WithError(err).Fatal("Failed to load config")
 	}
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("Config validation failed: %v", err)
+		logger.WithError(err).Fatal("Config validation failed")
 	}
 
 	// Get Google credentials path
@@ -116,7 +148,7 @@ func setupConfigAndRepo() (*config.Config, *googlecalendar.Repository) {
 		cfg.WriteTo.GoogleCalendar.ID,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create Google Calendar repository: %v", err)
+		logger.WithError(err).Fatal("Failed to create Google Calendar repository")
 	}
 
 	return cfg, repo
@@ -124,11 +156,11 @@ func setupConfigAndRepo() (*config.Config, *googlecalendar.Repository) {
 
 func debugTgifMapping(tgifMapping *domain.TGIFMapping) {
 	if tgifMapping == nil {
-		log.Printf("DEBUG: tgifMapping is nil")
+		logger.Debug("TGIFMapping is nil")
 		return
 	}
 
-	log.Printf("DEBUG: TGIFMapping contains %d days", len(*tgifMapping))
+	logger.WithField("totalDays", len(*tgifMapping)).Debug("TGIFMapping contents")
 
 	// Group days by month for organized output
 	monthGroups := make(map[string][]*domain.TGIFDay)
@@ -138,7 +170,7 @@ func debugTgifMapping(tgifMapping *domain.TGIFMapping) {
 	}
 
 	for monthKey, days := range monthGroups {
-		log.Printf("DEBUG: Month %s:", monthKey)
+		logger.WithField("month", monthKey).Debug("Processing month")
 
 		// Sort days by date
 		for i := range days {
@@ -172,7 +204,11 @@ func debugTgifMapping(tgifMapping *domain.TGIFMapping) {
 				flagStr = "None"
 			}
 
-			log.Printf("  %s (%s): %s", day.Date.Format("2006-01-02"), day.Date.Weekday().String(), flagStr)
+			logger.WithFields(logrus.Fields{
+				"date":    day.Date.Format("2006-01-02"),
+				"weekday": day.Date.Weekday().String(),
+				"flags":   flagStr,
+			}).Debug("Day details")
 		}
 	}
 }
