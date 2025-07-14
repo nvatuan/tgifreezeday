@@ -226,7 +226,7 @@ func (r *Repository) ListAllBlockersInRange(startDate, endDate time.Time) ([]*Bl
 	return blockers, nil
 }
 
-func (r *Repository) WriteBlockerOnDate(date time.Time, summary string) error {
+func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description string) error {
 	// Convert to calendar timezone for proper display
 	calendarDate := date.In(r.calendarTZ)
 
@@ -240,11 +240,21 @@ func (r *Repository) WriteBlockerOnDate(date time.Time, summary string) error {
 		defaultEndHour, 0, 0, 0,
 		r.calendarTZ)
 
+	// Combine custom description with signature for identification
+	// If description is empty or just the signature, use signature only
+	var finalDescription string
+	if description == "" || description == defaultBlockerSignature {
+		finalDescription = defaultBlockerSignature
+	} else {
+		// Append signature to custom description for identification
+		finalDescription = description + defaultBlockerSignature
+	}
+
 	call := r.service.Events.Insert(r.writeCalendarID, &calendar.Event{
 		Summary:     summary,
 		Start:       &calendar.EventDateTime{DateTime: startDateTime.Format(time.RFC3339)},
 		End:         &calendar.EventDateTime{DateTime: endDateTime.Format(time.RFC3339)},
-		Description: defaultBlockerDescription,
+		Description: finalDescription,
 	})
 
 	_, err := call.Do()

@@ -130,11 +130,17 @@ func (c *Config) ValidateWriteToGoogleCalendarID() error {
 }
 
 // Validate the event to write on the WriteTo calendar
-// SIDE EFFECT!! if summary is nil, set it to default message
+// SIDE EFFECT!! if summary or description is nil, set it to default message
 func (c *Config) SetDefaultAndValidateWriteToGoogleCalendarIfTodayIsFreezeDay() error {
 	// enforce limits so that it won't be rejected by Google Calendar API
 	if len([]rune(*c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary)) > 250 {
 		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.summary cannot be longer than 250 characters")
 	}
+
+	// Google Calendar API has a limit on description field (typically around 8192 characters)
+	if len([]rune(*c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description)) > 8000 {
+		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.description cannot be longer than 8000 characters")
+	}
+
 	return nil
 }

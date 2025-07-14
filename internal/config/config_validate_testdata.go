@@ -22,6 +22,7 @@ writeTo:
     ifTodayIsFreezeDay:
       default:
         summary: null
+        description: null
 `
 
 var mockValidParsedConfig = &Config{
@@ -50,7 +51,8 @@ var mockValidParsedConfig = &Config{
 			ID: "example-freeze@example.com",
 			IfTodayIsFreezeDay: IfTodayIsFreezeDayConfig{
 				Default: DefaultConfig{
-					Summary: helpers.StringPtr("Today is FREEZE-DAY. no PROD operation is allowed."),
+					Summary:     helpers.StringPtr("Today is FREEZE-DAY. no PROD operation is allowed."),
+					Description: helpers.StringPtr("Managed by tgifreezeday, do not modify."),
 				},
 			},
 		},
@@ -77,6 +79,7 @@ writeTo:
     ifTodayIsFreezeDay:
       default:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed." 
+        description: "Managed by tgifreezeday, do not modify."
 `
 
 const mockConfigYamlInvalidUnsupportedDate = `
@@ -97,6 +100,7 @@ writeTo:
     ifTodayIsFreezeDay:
       default:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed." 
+        description: "Managed by tgifreezeday, do not modify."
 `
 
 const mockConfigYamlInvalidUnsupportedCheck = `
@@ -117,4 +121,5 @@ writeTo:
     ifTodayIsFreezeDay:
       default:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed." 
+        description: "Managed by tgifreezeday, do not modify."
 `

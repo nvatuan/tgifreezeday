@@ -1,5 +1,7 @@
 # TGI Freeze Day
 
+<img src="./docs/tgifreezeday.png">
+
 A Go application that helps announce production freeze days to ensure safe deployments by:
 
 1. Fetching holidays and special events from Google Calendar
@@ -60,6 +62,7 @@ writeTo:
     ifTodayIsFreezeDay:
       default:
         summary: "string|null" # if `null`, use default message
+        description: "string|null" # if `null`, use default message. Supports HTML markup for rich formatting.
 ```
 
 #### Supported Countries:
@@ -98,7 +101,44 @@ writeTo:
     ifTodayIsFreezeDay:
       default:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed."
+        description: |
+          Production operations are restricted today.<br><br>For more information:<br><ul><li>See <a href="https://example.org/">freeze policy</a></li><li>Emergency contact: <a href="https://example.org/">example-team@example.org</a></li></ul>
 ```
+
+### Description Field HTML Support
+
+The `description` field supports HTML markup for rich formatting in Google Calendar:
+
+**Supported HTML tags:**
+- `<br>` - Line breaks
+- `<ul><li>` - Bullet points
+- `<a href="...">` - Links
+- `<strong>` - Bold text
+- `<em>` - Italic text
+
+**Example with HTML formatting:**
+```yaml
+description: |
+  🚫 <strong>PRODUCTION FREEZE ACTIVE</strong><br><br>
+  
+  What this means:<br>
+  <ul>
+    <li>No deployments to production</li>
+    <li>No infrastructure changes</li>
+    <li>Emergency changes require approval</li>
+  </ul>
+  
+  Resources:<br>
+  <ul>
+    <li>Policy: <a href="https://bit.ly/freeze-policy">Freeze Policy</a></li>
+    <li>Runbook: <a href="https://bit.ly/freeze-runbook">Emergency Runbook</a></li>
+    <li>Contact: <a href="mailto:ops-team@company.com">ops-team@company.com</a></li>
+  </ul>
+```
+
+Note that TGIFreezeday (v1) keeps whitespace in Description while sending, and Google Calendar doesn't trim them, so pairing newlines with `<br>` may create lots of unexpected newlines on the Google Calendar Event.
+
+The above is only for illustration. In reality, you may want to strip all new lines in the description.
 
 ## CI/CD Pipeline
 

@@ -17,3 +17,6 @@ writeTo:
     ifTodayIsFreezeDay:
       default:
         summary: "Today is FREEZE-DAY. no PROD operation is allowed." 
+        description: |
+          Production operations are restricted today.
+          For more information:<ul><li>See <a href="https://example.org/">freeze policy</a></li><li>Emergency contact: <a href="https://example.org/">example-team@example.org</a></li></ul> 

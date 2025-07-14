@@ -41,7 +41,8 @@ type IfTodayIsFreezeDayConfig struct {
 }
 
 type DefaultConfig struct {
-	Summary *string `yaml:"summary"`
+	Summary     *string `yaml:"summary"`
+	Description *string `yaml:"description"`
 }
 
 type Config struct {
@@ -75,9 +76,13 @@ func LoadWithDefaultFromByteArray(data []byte) (*Config, error) {
 }
 
 const defaultSummary = "Today is FREEZE-DAY. no PROD operation is allowed."
+const defaultDescription = ""
 
 func (c *Config) SetDefault() {
 	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary == nil {
 		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary = helpers.StringPtr(defaultSummary)
+	}
+	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description == nil {
+		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description = helpers.StringPtr(defaultDescription)
 	}
 }

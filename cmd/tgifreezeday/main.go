@@ -78,19 +78,22 @@ func syncCommand() {
 		logger.WithError(err).Fatal("Failed to wipe blockers")
 	}
 
+	logger.WithField("command", "sync").Info("Creating blocker for freeze days...")
 	freezeDayCount := 0
 	for _, day := range *tgifMapping {
 		if day.IsTodayFreezeDay(cfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) {
 			freezeDayCount++
 			summary := *cfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary
+			description := *cfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description
 
 			logger.WithFields(logrus.Fields{
-				"command": "sync",
-				"date":    day.Date.Format("2006-01-02"),
-				"summary": summary,
-			}).Info("Creating blocker for freeze day")
+				"command":     "sync",
+				"date":        day.Date.Format("2006-01-02"),
+				"summary":     summary,
+				"description": description,
+			}).Debug("Creating blocker for freeze day with following details")
 
-			err := repo.WriteBlockerOnDate(day.Date, summary)
+			err := repo.WriteBlockerOnDate(day.Date, summary, description)
 			if err != nil {
 				logger.WithFields(logrus.Fields{
 					"command": "sync",
