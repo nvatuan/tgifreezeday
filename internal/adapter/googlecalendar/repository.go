@@ -11,7 +11,10 @@ import (
 
 	"github.com/nvat/tgifreezeday/internal/domain"
 	"github.com/nvat/tgifreezeday/internal/helpers"
+	"github.com/nvat/tgifreezeday/internal/logging"
 )
+
+var logger = logging.GetLogger()
 
 // Repository implements the CalendarRepository interface for Google Calendar
 type Repository struct {
@@ -118,6 +121,24 @@ func (r *Repository) WipeAllBlockersInMonth(dateAnchor time.Time) error {
 // get all events from writeCalendarId that has description containing defaultBlockerSignature
 // then delete them
 func (r *Repository) WipeAllBlockersInRange(startDate, endDate time.Time) error {
+	blockerEvents, err := r.fetchBlockerEvents(startDate, endDate)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve blocker events: %w", err)
+	}
+
+	// Delete events sequentially - Google Calendar Go client doesn't support batch requests
+	for _, event := range blockerEvents {
+		deleteCall := r.service.Events.Delete(r.writeCalendarID, event.Id)
+		if err := deleteCall.Do(); err != nil {
+			return fmt.Errorf("failed to delete blocker event %s: %w", event.Id, err)
+		}
+	}
+
+	return nil
+}
+
+// fetchBlockerEvents retrieves all blocker events from the write calendar within the specified date range
+func (r *Repository) fetchBlockerEvents(startDate, endDate time.Time) ([]*calendar.Event, error) {
 	// Fetch events from the write calendar within the date range
 	call := r.service.Events.List(r.writeCalendarID).
 		TimeMin(startDate.Format(time.RFC3339)).
@@ -127,20 +148,82 @@ func (r *Repository) WipeAllBlockersInRange(startDate, endDate time.Time) error 
 
 	events, err := call.Do()
 	if err != nil {
-		return fmt.Errorf("failed to retrieve events from write calendar: %w", err)
+		return nil, fmt.Errorf("failed to retrieve events from write calendar: %w", err)
 	}
 
-	// Delete events sequentially - Google Calendar Go client doesn't support batch requests
+	// Filter for blocker events only
+	var blockerEvents []*calendar.Event
 	for _, event := range events.Items {
 		if event.Description != "" && strings.Contains(event.Description, defaultBlockerDescription) {
-			deleteCall := r.service.Events.Delete(r.writeCalendarID, event.Id)
-			if err := deleteCall.Do(); err != nil {
-				return fmt.Errorf("failed to delete blocker event %s: %w", event.Id, err)
-			}
+			blockerEvents = append(blockerEvents, event)
 		}
 	}
 
-	return nil
+	return blockerEvents, nil
+}
+
+// BlockerEvent represents a blocker event for display purposes
+type BlockerEvent struct {
+	Id          string
+	Summary     string
+	Description string
+	Start       time.Time
+	End         time.Time
+}
+
+// ListAllBlockersInRange lists all blocker events in the specified date range
+func (r *Repository) ListAllBlockersInRange(startDate, endDate time.Time) ([]*BlockerEvent, error) {
+	blockerEvents, err := r.fetchBlockerEvents(startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve blocker events: %w", err)
+	}
+
+	var blockers []*BlockerEvent
+	for _, event := range blockerEvents {
+		blocker := &BlockerEvent{
+			Id:          event.Id,
+			Summary:     event.Summary,
+			Description: event.Description,
+		}
+
+		// Parse start time
+		if event.Start != nil {
+			if event.Start.DateTime != "" {
+				if startTime, err := time.Parse(time.RFC3339, event.Start.DateTime); err == nil {
+					blocker.Start = startTime
+				}
+			} else if event.Start.Date != "" {
+				if startTime, err := time.Parse("2006-01-02", event.Start.Date); err == nil {
+					blocker.Start = startTime
+				}
+			}
+		}
+
+		// Parse end time
+		if event.End != nil {
+			if event.End.DateTime != "" {
+				if endTime, err := time.Parse(time.RFC3339, event.End.DateTime); err == nil {
+					blocker.End = endTime
+				}
+			} else if event.End.Date != "" {
+				if endTime, err := time.Parse("2006-01-02", event.End.Date); err == nil {
+					blocker.End = endTime
+				}
+			}
+		}
+
+		// Debug logging - print full API response for this event
+		logger.WithFields(map[string]interface{}{
+			"event_id":          event.Id,
+			"event_summary":     event.Summary,
+			"event_description": event.Description,
+			"full_api_response": event,
+		}).Debug("Found blocker event - full API response")
+
+		blockers = append(blockers, blocker)
+	}
+
+	return blockers, nil
 }
 
 func (r *Repository) WriteBlockerOnDate(date time.Time, summary string) error {

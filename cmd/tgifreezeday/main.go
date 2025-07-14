@@ -31,6 +31,8 @@ func main() {
 		syncCommand()
 	case "wipe-blockers":
 		wipeBlockersCommand()
+	case "list-blockers":
+		listBlockersCommand()
 	default:
 		logger.WithField("command", command).Error("Unknown command")
 		printUsage()
@@ -44,13 +46,13 @@ func printUsage() {
 	fmt.Println("Commands:")
 	fmt.Println("  sync           Sync freeze day blockers to calendar")
 	fmt.Println("  wipe-blockers  Remove all existing blockers in range (specified by shared.lookbackDays/lookaheadDays in config.yaml)")
+	fmt.Println("  list-blockers  List all existing blockers in range (specified by shared.lookbackDays/lookaheadDays in config.yaml)")
 }
 
 func syncCommand() {
 	cfg, repo := setupConfigAndRepo()
 
-	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.Shared.LookbackDays)
-	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.Shared.LookaheadDays)
+	rangeStart, rangeEnd := getDateRange(cfg.Shared.LookbackDays, cfg.Shared.LookaheadDays)
 
 	logger.WithFields(logrus.Fields{
 		"command":   "sync",
@@ -108,8 +110,7 @@ func syncCommand() {
 func wipeBlockersCommand() {
 	cfg, repo := setupConfigAndRepo()
 
-	rangeStart := time.Now().UTC().AddDate(0, 0, -1*cfg.Shared.LookbackDays)
-	rangeEnd := time.Now().UTC().AddDate(0, 0, cfg.Shared.LookaheadDays)
+	rangeStart, rangeEnd := getDateRange(cfg.Shared.LookbackDays, cfg.Shared.LookaheadDays)
 
 	logger.WithFields(logrus.Fields{
 		"command":   "wipe-blockers",
@@ -123,6 +124,52 @@ func wipeBlockersCommand() {
 	}
 
 	logger.WithField("command", "wipe-blockers").Info("Wipe completed successfully")
+}
+
+func listBlockersCommand() {
+	cfg, repo := setupConfigAndRepo()
+
+	rangeStart, rangeEnd := getDateRange(cfg.Shared.LookbackDays, cfg.Shared.LookaheadDays)
+
+	logger.WithFields(logrus.Fields{
+		"command":   "list-blockers",
+		"dateRange": fmt.Sprintf("%s to %s", rangeStart.Format("2006-01-02"), rangeEnd.Format("2006-01-02")),
+		"lookback":  cfg.Shared.LookbackDays,
+		"lookahead": cfg.Shared.LookaheadDays,
+	}).Info("Listing all blockers")
+
+	blockers, err := repo.ListAllBlockersInRange(rangeStart, rangeEnd)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to list blockers")
+	}
+
+	if len(blockers) == 0 {
+		logger.WithField("command", "list-blockers").Info("No blockers found in range")
+		fmt.Println("No blocker events found in the specified range.")
+		return
+	}
+
+	logger.WithFields(logrus.Fields{
+		"command": "list-blockers",
+		"count":   len(blockers),
+	}).Info("Found blockers")
+
+	fmt.Printf("Found %d blocker event(s) in range %s to %s:\n\n",
+		len(blockers),
+		rangeStart.Format("2006-01-02"),
+		rangeEnd.Format("2006-01-02"))
+
+	for i, blocker := range blockers {
+		fmt.Printf("%d. %s\n", i+1, blocker.Summary)
+		fmt.Printf("   Date: %s\n", blocker.Start.Format("2006-01-02 15:04"))
+		if blocker.Description != "" {
+			fmt.Printf("   Description: %s\n", blocker.Description)
+		}
+		fmt.Printf("   ID: %s\n", blocker.Id)
+		fmt.Println()
+	}
+
+	logger.WithField("command", "list-blockers").Info("List completed successfully")
 }
 
 func setupConfigAndRepo() (*config.Config, *googlecalendar.Repository) {
@@ -211,4 +258,17 @@ func debugTgifMapping(tgifMapping *domain.TGIFMapping) {
 			}).Debug("Day details")
 		}
 	}
+}
+
+// getDateRange creates a date range from midnight today minus lookbackDays to midnight today plus lookaheadDays
+// This ensures all dates are at midnight UTC to avoid timezone shift issues
+func getDateRange(lookbackDays, lookaheadDays int) (time.Time, time.Time) {
+	// Get current time in UTC and truncate to midnight
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	rangeStart := today.AddDate(0, 0, -1*lookbackDays)
+	rangeEnd := today.AddDate(0, 0, lookaheadDays)
+
+	return rangeStart, rangeEnd
 }

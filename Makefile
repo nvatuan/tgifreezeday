@@ -46,6 +46,12 @@ wipe-blockers: build
 	@echo "Wiping all blockers..."
 	LOG_LEVEL=debug LOG_FORMAT=colored ./$(BIN_DIR)/$(BINARY_NAME) wipe-blockers
 
+# List all blockers in range
+.PHONY: list-blockers
+list-blockers: build
+	@echo "Listing all blockers..."
+	LOG_LEVEL=debug LOG_FORMAT=colored ./$(BIN_DIR)/$(BINARY_NAME) list-blockers
+
 # Install dependencies
 .PHONY: deps
 deps:
@@ -63,6 +69,7 @@ help:
 	@echo "  run           - Build and run the application (use ARGS=\"subcommand\" to pass arguments)"
 	@echo "  sync          - Build and run sync command"
 	@echo "  wipe-blockers - Build and run wipe-blockers command"
+	@echo "  list-blockers - Build and run list-blockers command"
 	@echo "  deps          - Install and tidy dependencies"
 	@echo "  help          - Show this help message"
 	@echo ""
