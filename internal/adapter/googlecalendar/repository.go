@@ -164,7 +164,7 @@ func (r *Repository) fetchBlockerEvents(startDate, endDate time.Time) ([]*calend
 
 // BlockerEvent represents a blocker event for display purposes
 type BlockerEvent struct {
-	Id          string
+	ID          string
 	Summary     string
 	Description string
 	Start       time.Time
@@ -181,7 +181,7 @@ func (r *Repository) ListAllBlockersInRange(startDate, endDate time.Time) ([]*Bl
 	var blockers []*BlockerEvent
 	for _, event := range blockerEvents {
 		blocker := &BlockerEvent{
-			Id:          event.Id,
+			ID:          event.Id,
 			Summary:     event.Summary,
 			Description: event.Description,
 		}

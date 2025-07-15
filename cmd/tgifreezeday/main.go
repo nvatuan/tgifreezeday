@@ -168,7 +168,7 @@ func listBlockersCommand() {
 		if blocker.Description != "" {
 			fmt.Printf("   Description: %s\n", blocker.Description)
 		}
-		fmt.Printf("   ID: %s\n", blocker.Id)
+		fmt.Printf("   ID: %s\n", blocker.ID)
 		fmt.Println()
 	}
 
