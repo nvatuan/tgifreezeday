@@ -26,7 +26,7 @@ clean:
 .PHONY: test
 test:
 	@echo "Running tests..."
-	go test ./...
+	go test ./... -v
 
 # Run the application
 .PHONY: run

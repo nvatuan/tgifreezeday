@@ -76,7 +76,7 @@ func LoadWithDefaultFromByteArray(data []byte) (*Config, error) {
 }
 
 const defaultSummary = "Today is FREEZE-DAY. no PROD operation is allowed."
-const defaultDescription = ""
+const defaultDescription = "Managed by tgifreezeday, do not modify."
 
 func (c *Config) SetDefault() {
 	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary == nil {
