@@ -4,156 +4,220 @@
 
 A Go application that helps announce production freeze days to ensure safe deployments by:
 
-1. Fetching holidays and special events from Google Calendar
-2. Updating a specific calendar with freeze days information based on rules set by config.yaml
+1. Fetching holidays events from Google Calendar
+2. Updating a specific calendar with freeze days information based on what you defined as a freeze-day
 
-Here is a rough sequence diagram showing v1 feature:
+## Concepts
+
+- **Freeze Day**: A day when production deployments are restricted to reduce risk
+- **Blocker Event**: A calendar event (8AM-8PM) that signals "no deployments allowed" on the calendar. This serves as a notice for everyone.
+
+## How It Works
 
 ```mermaid
 sequenceDiagram
-    participant tgfreezeday
-    participant googleCal_from
-    participant googleCal_to
+    participant App as tgifreezeday
+    participant Source as Holiday Calendar
+    participant Target as Team Calendar
 
-    tgfreezeday->>googleCal_from: Read public holidays info
-    tgfreezeday->>tgfreezeday: Eval which day is freezeday
-    tgfreezeday->>googleCal_to: Write Google Event on Cal to remind
+    App->>Source: Read public holidays
+    App->>App: Calculate freeze days
+    App->>Target: Create blocker events
 ```
 
-## Features
-
-### v1:
-
-#### Core Functionality
-
-For version 1, I am for these following features only:
-- Reads from a source calendar, checking if today is a freeze day. Freeze day in v1 is defined as:
-  - If today is the first business day of the month
-  - If today is a non-business day (eg. holiday, weekends, etc.)
-  - If tomorrow is a non-business day (eg. holiday, weekends, etc.)
-- If today is a freeze day, on a destination calendar, do this "default" behavior:
-  - Create a blocking (eg. "busy") event that spans from 8AM to 8PM that said "Today is Freeze-day."
-  - The "default" option can be passed with a "summary" that override the default message above.
-
-- "business day" is defined as day that normally business is being conducted.
-- Google Calendar is the only Calendar supported
-
-#### Non-core functionality
-
-- In case of a rule change after first run, the program must be able to remove old events and add new events that reflects the rules set. Because of that, some design effort must go to how to identify events that are created by the tool.
-- The program is designed to run periodically (eg. daily, weekly,...) so a "window" should be specify so it can update forward. For instance, window=7d meaning it will check the next 7 days for freeze days and mark the calendar, to avoid running for so long.
-- Program must check for permission issue and fail-fast if no permission to read or write.
-- Program must fail-fast if not set necessary environment variables
-- Should use client library instead of calling API HTTP requests.
+1. **Reads** public holiday data from Google Calendar
+2. **Calculates** which days are freeze days based on your rules  
+3. **Creates** blocker events on your team calendar
+4. **Manages** events automatically (add/remove as rules change)
 
 ## Commands
 
-The application supports the following commands:
+- `tgifreezeday sync` - Update calendar with current freeze day rules
+- `tgifreezeday wipe-blockers` - Remove all managed events in time range
+- `tgifreezeday list-blockers` - Show all managed events with details
 
-- `tgifreezeday sync` - Full sync: wipe existing blockers and create new ones based on freeze day rules
-- `tgifreezeday wipe-blockers` - Remove all existing blockers in the specified time range
-- `tgifreezeday list-blockers` - List all existing blockers in the specified time range with full details
+## Configuration
 
-## Config Format:
-
-The program will accept the following config to run.
+### Basic Example
 
 ```yaml
 shared:
-  lookbackDays: 20     # Days to look back from today (min: 20, max: 60)
-  lookaheadDays: 60    # Days to look ahead from today (min: 20, max: 60)
+  lookbackDays: 20      # Check 20 days back
+  lookaheadDays: 60     # Check 60 days ahead
+  
 readFrom:
   googleCalendar:
-    countryCode: <supported country code> # "jpn", "vnm", A-3 ISO 3166 country code
+    countryCode: "jpn"   # Japan public holidays
     todayIsFreezeDayIf:
-    - [yesterday, today, tomorrow]: # with this block, rules are AND together. To do OR, specify multiple items with same key.
-      - isTheFirstBusinessDayOfTheMonth
-      - isTheLastBusinessDayOfTheMonth
-      - isNonBusinessDay
+      # - each key can be [yesterday, today, tomorrow]
+      - today: [isTheFirstBusinessDayOfTheMonth]
+      - today: [isTheLastBusinessDayOfTheMonth] 
+      - tomorrow: [isNonBusinessDay]
+      
 writeTo:
   googleCalendar:
-    id: <google calendary id to read>
+    id: "your-calendar-id@group.calendar.google.com"
     ifTodayIsFreezeDay:
       default:
-        summary: "string|null" # if `null`, use default message
-        description: "string|null" # if `null`, use default message. Supports HTML markup for rich formatting.
-```
-
-#### Supported Countries:
-
-- **jpn** - Japanese public holidays (filters out cultural observances like Tanabata)
-- **vnm** - Vietnam public holidays
-
-#### Example:
-
-If your organization has the following rules:
-
-> As a general rule, production operations should **not** be conducted on the following days:
-> - **First business day of the month**
-> - **Last business day of the month**
-> - **The day before public holidays or non-work day**
-
-The folloiwng config should reflect the above rule:
-
-```yaml
-shared:
-  lookbackDays: 20
-  lookaheadDays: 60
-readFrom:
-  googleCalendar:
-    countryCode: "jpn"
-    todayIsFreezeDayIf:
-      - today:
-        - isTheFirstBusinessDayOfTheMonth
-      - today:
-        - isTheLastBusinessDayOfTheMonth
-      - tomorrow:
-        - isNonBusinessDay
-writeTo:
-  googleCalendar:
-    id: <google calendary id to read>
-    ifTodayIsFreezeDay:
-      default:
-        summary: "Today is FREEZE-DAY. no PROD operation is allowed."
+        summary: "🚫 PRODUCTION FREEZE - No Deployments"
         description: |
-          Production operations are restricted today.<br><br>For more information:<br><ul><li>See <a href="https://example.org/">freeze policy</a></li><li>Emergency contact: <a href="https://example.org/">example-team@example.org</a></li></ul>
+          Production operations restricted today.<br>
+          <a href="https://wiki.company.com/freeze-policy">Freeze Policy</a>
 ```
 
-### Description Field HTML Support
+### Freeze Day Rules
 
-The `description` field supports HTML markup for rich formatting in Google Calendar:
+Configure when freeze days occur using these conditions:
 
-**Supported HTML tags:**
-- `<br>` - Line breaks
-- `<ul><li>` - Bullet points
-- `<a href="...">` - Links
-- `<strong>` - Bold text
-- `<em>` - Italic text
+| Condition | Description |
+|-----------|-------------|
+| `isTheFirstBusinessDayOfTheMonth` | First weekday of month (excluding holidays) |
+| `isTheLastBusinessDayOfTheMonth` | Last weekday of month (excluding holidays) |
+| `isNonBusinessDay` | Weekend or public holiday |
 
-**Example with HTML formatting:**
+### Freeze Rule Setting
+
+The program strives to be as natural as possible. Here, in this snippet, you can kind of understand the intention:
+
+```yaml
+todayIsFreezeDayIf:
+- today: [isTheFirstBusinessDayOfTheMonth]
+```
+
+> "Today is freeze-day if Today is the first business day of the month"
+
+Here, `"today"` is a Relative Day Anchor. Here are the things you should know:
+- Available Relative Day Anchor: `yesterday`, `today`, `tomorrow`
+- Within an anchor, rules are AND together:
+  - `today: [isA, isB]` meaning "today is freeze day if today is A and is B"
+- Rules across anchors are `OR` together.
+  - ```
+    todayIsFreezeDayIf:
+    - today: [isA, isB]
+    - tomorrow: [isC]
+    ```
+  - Meaning, "today is freeze day if (today is A and B) OR (tomorrow is C)"
+
+### Supported Countries
+
+- `jpn` - Japan public holidays  
+- `vnm` - Vietnam public holidays
+
+### Rich Descriptions
+
+HTML markup supported for calendar descriptions:
+
 ```yaml
 description: |
-  🚫 <strong>PRODUCTION FREEZE ACTIVE</strong><br><br>
-  
-  What this means:<br>
+  🚫 <strong>PRODUCTION FREEZE</strong><br><br>
+  Restrictions:<br>
   <ul>
     <li>No deployments to production</li>
     <li>No infrastructure changes</li>
-    <li>Emergency changes require approval</li>
   </ul>
-  
-  Resources:<br>
-  <ul>
-    <li>Policy: <a href="https://bit.ly/freeze-policy">Freeze Policy</a></li>
-    <li>Runbook: <a href="https://bit.ly/freeze-runbook">Emergency Runbook</a></li>
-    <li>Contact: <a href="mailto:ops-team@company.com">ops-team@company.com</a></li>
-  </ul>
+  Emergency: <a href="mailto:ops@company.com">ops@company.com</a>
 ```
 
-Note that TGIFreezeday (v1) keeps whitespace in Description while sending, and Google Calendar doesn't trim them, so pairing newlines with `<br>` may create lots of unexpected newlines on the Google Calendar Event.
+**Supported tags**: `<br>`, `<ul><li>`, `<a href="">`, `<strong>`, `<em>`
 
-The above is only for illustration. In reality, you may want to strip all new lines in the description.
+**Note**: Avoid mixing newlines with `<br>` tags to prevent extra spacing.
+
+## Setup
+
+### Prerequisites
+
+- Go 1.24+
+- Google Calendar API access
+- Service account with calendar permissions
+
+### Installation
+
+```bash
+# Build from source
+git clone https://github.com/nvat/tgifreezeday
+cd tgifreezeday
+make build
+
+# Or use Docker
+docker pull ghcr.io/nvat/tgifreezeday:latest
+```
+
+### Environment Variables
+
+```bash
+# Required
+export GOOGLE_APP_CLIENT_CRED_JSON_PATH="/path/to/service-account.json"
+
+# Optional
+export CONFIG_PATH="config.yaml"           # Default: config.yaml  
+export LOG_LEVEL="info"                    # debug, info, warn, error
+export LOG_FORMAT="json"                   # json, text, colored
+```
+
+### Permissions Setup
+
+1. **Enable** Google Calendar API in your Google Cloud project
+2. **Create** service account with credentials JSON
+3. **Share** your target calendar with the service account email
+4. **Grant** "Make changes to events" permission
+
+## Usage
+
+```bash
+# Sync freeze days to calendar
+./bin/tgifreezeday sync
+
+# Remove all managed events  
+./bin/tgifreezeday wipe-blockers
+
+# List current managed events
+./bin/tgifreezeday list-blockers
+
+# Development with colored logs
+LOG_FORMAT=colored LOG_LEVEL=debug ./bin/tgifreezeday sync
+```
+
+### Docker Usage
+
+```bash
+docker run --rm \
+  -e GOOGLE_APP_CLIENT_CRED_JSON_PATH=/app/creds.json \
+  -v /path/to/creds.json:/app/creds.json \
+  -v /path/to/config.yaml:/app/config.yaml \
+  ghcr.io/nvat/tgifreezeday:latest sync
+```
+
+## Development
+
+```bash
+# Format and test
+make test
+
+# Build binary
+make build
+
+# Run with development logging
+make sync    # Runs with colored debug logs
+```
+
+### Project Structure
+
+```
+cmd/tgifreezeday/          # CLI application
+internal/
+├── adapter/googlecalendar/  # Google Calendar API client
+├── config/                  # Configuration management  
+├── domain/                  # Business logic
+└── helpers/                 # Utilities
+```
+
+### CI/CD
+
+- **Lint & Test** on every push
+- **Docker images** built on main branch
+- **Multi-platform** support (linux/amd64, linux/arm64)
+- **Images**: `ghcr.io/nvat/tgifreezeday:latest`
 
 ## License
 
-MIT. Free to use, modify, distribute, but must retain source and attribution.
+MIT - Free to use, modify, and distribute with attribution.

@@ -10,6 +10,7 @@ import (
 
 const (
 	GoogleAppClientCredJSONPathEnv = "GOOGLE_APP_CLIENT_CRED_JSON_PATH" // nolint:gosec
+	ConfigPathEnv                  = "CONFIG_PATH"
 )
 
 type SharedConfig struct {
@@ -52,7 +53,7 @@ type Config struct {
 }
 
 func LoadWithDefault() (*Config, error) {
-	configPath := os.Getenv("CONFIG_PATH")
+	configPath := os.Getenv(ConfigPathEnv)
 	if configPath == "" {
 		configPath = "config.yaml"
 	}
