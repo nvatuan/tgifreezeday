@@ -20,13 +20,25 @@ build:
 clean:
 	@echo "Cleaning..."
 	rm -rf $(BIN_DIR)
-	@echo "Cleaned $(BIN_DIR)"
+	rm -f coverage.out coverage.html
+	@echo "Cleaned $(BIN_DIR) and coverage files"
 
 # Run tests
 .PHONY: test
 test:
 	@echo "Running tests..."
 	go test ./... -v
+
+# Run tests with coverage
+.PHONY: coverage
+coverage:
+	@echo "Running tests with coverage..."
+	go test ./... -coverprofile=coverage.out -covermode=atomic -v
+	@echo ""
+	@echo "Coverage report:"
+	go tool cover -func=coverage.out
+	@echo ""
+	@echo "To view HTML coverage report, run: go tool cover -html=coverage.out"
 
 # Run the application
 .PHONY: run
@@ -66,6 +78,7 @@ help:
 	@echo "  build         - Build the application to $(BIN_DIR)/"
 	@echo "  clean         - Remove build artifacts"
 	@echo "  test          - Run tests"
+	@echo "  coverage      - Run tests with coverage and show report"
 	@echo "  run           - Build and run the application (use ARGS=\"subcommand\" to pass arguments)"
 	@echo "  sync          - Build and run sync command"
 	@echo "  wipe-blockers - Build and run wipe-blockers command"
