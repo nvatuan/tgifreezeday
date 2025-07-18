@@ -1,5 +1,7 @@
 # TGI Freeze Day
 
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/nvat/tgifreezeday/main/.github/badges/coverage.json)](https://github.com/nvat/tgifreezeday/actions/workflows/coverage.yml)
+
 <img src="./docs/tgifreezeday.png">
 
 A Go application that helps announce production freeze days to ensure safe deployments by:

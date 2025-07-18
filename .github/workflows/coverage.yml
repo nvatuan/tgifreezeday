@@ -1,0 +1,90 @@
+name: Coverage Badge
+
+on:
+  push:
+    branches-ignore: [ 'main' ]
+
+env:
+  GO_VERSION: '1.24'
+
+jobs:
+  coverage:
+    name: Generate Coverage Badge
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Run tests with coverage
+      run: go test ./... -coverprofile=coverage.out -covermode=atomic -v
+    
+    - name: Generate coverage badge
+      run: |
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+        echo "Coverage: $COVERAGE%"
+        
+        # Set color based on coverage percentage
+        COVERAGE_NUM=$(echo $COVERAGE | cut -d'.' -f1)
+        if [ "$COVERAGE_NUM" -ge 80 ]; then
+          COLOR="brightgreen"
+        elif [ "$COVERAGE_NUM" -ge 60 ]; then
+          COLOR="green" 
+        elif [ "$COVERAGE_NUM" -ge 40 ]; then
+          COLOR="yellow"
+        elif [ "$COVERAGE_NUM" -ge 20 ]; then
+          COLOR="orange"
+        else
+          COLOR="red"
+        fi
+        
+        # Create a JSON file for shields.io endpoint
+        mkdir -p .github/badges
+        NEW_BADGE="{\"schemaVersion\": 1, \"label\": \"coverage\", \"message\": \"$COVERAGE%\", \"color\": \"$COLOR\"}"
+        echo "$NEW_BADGE" > .github/badges/coverage.json.new
+        
+        # Check if coverage has changed
+        if [ -f .github/badges/coverage.json ]; then
+          if cmp -s .github/badges/coverage.json .github/badges/coverage.json.new; then
+            echo "Coverage unchanged, skipping commit"
+            rm .github/badges/coverage.json.new
+            exit 0
+          fi
+        fi
+        
+        # Move new file to replace old one
+        mv .github/badges/coverage.json.new .github/badges/coverage.json
+        echo "Coverage updated to $COVERAGE%"
+        
+    - name: Commit coverage badge
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .github/badges/coverage.json
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Update coverage badge [skip ci]"
+          git push
+        fi
