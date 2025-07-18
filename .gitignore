@@ -2,3 +2,7 @@
 *.env
 secrets/
 bin/
+
+# Coverage files
+coverage.out
+coverage.html

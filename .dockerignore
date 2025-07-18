@@ -41,4 +41,4 @@ testdata/
 
 # Development files
 Makefile
-*.log 
+*.log
