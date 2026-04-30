@@ -42,7 +42,8 @@ func schemaRefHTML(version, yamlContent string) string {
     .breadcrumb a:hover { text-decoration:underline; }
     .back-btn { font-size:1.4rem; text-decoration:none; color:var(--pico-muted-color); line-height:1; }
     .back-btn:hover { color:var(--pico-color); }
-    pre[class*="language-"] { white-space:pre-wrap; word-break:break-word; font-size:0.84rem; border-radius:0.5rem; }
+    pre[class*="language-"] { line-height:1.5 !important; white-space:pre-wrap; word-break:break-word; font-size:0.84rem; border-radius:0.5rem; }
+    .line-numbers .line-numbers-rows > span::before { line-height:1.5; }
     .readonly-badge { background:#1f2937; color:#9ca3af; border:1px solid #374151; padding:0.15rem 0.5rem; border-radius:999px; font-size:0.75rem; font-weight:600; }
   </style>
 </head>

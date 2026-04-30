@@ -498,12 +498,15 @@ func calendarOptions(cals []*googlecalendar.CalendarItem) string {
 <script>
 function applyCalendarId(id) {
   if (!id) return;
-  const ta = document.getElementById('config_yaml');
-  const updated = ta.value.replace(
-    /(writeTo[\s\S]*?googleCalendar[\s\S]*?id:\s*)["']?[^\n"']*["']?/,
-    '$1"' + id.replace(/"/g, '\\"') + '"'
-  );
-  ta.value = updated !== ta.value ? updated : ta.value;
+  var escaped = id.replace(/"/g, '\\"');
+  var re = /(writeTo[\s\S]*?googleCalendar[\s\S]*?id:\s*)["']?[^\n"']*["']?/;
+  if (window.cmEditor) {
+    var updated = window.cmEditor.getValue().replace(re, '$1"' + escaped + '"');
+    window.cmEditor.setValue(updated);
+  } else {
+    var ta = document.getElementById('config_yaml');
+    ta.value = ta.value.replace(re, '$1"' + escaped + '"');
+  }
   document.getElementById('cal-picker').value = '';
 }
 </script>`, opts)
@@ -542,8 +545,9 @@ func configDetailHTML(cfg *db.Config) string {
     .action-bar { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
     .action-bar button, .action-bar a[role=button] { margin:0; padding:0.45rem 1rem; font-size:0.88rem; }
     .ack { opacity:0.65; font-style:italic; padding:0.5rem 0; font-size:0.9rem; }
-    pre[class*="language-"] { white-space: pre-wrap; word-break: break-word; font-size: 0.84rem; border-radius: 0.5rem; }
-    /* re-highlight HTMX-swapped content */
+    /* Prism: override Pico.css line-height so numbers and code stay flush */
+    pre[class*="language-"] { line-height: 1.5 !important; white-space: pre-wrap; word-break: break-word; font-size: 0.84rem; border-radius: 0.5rem; }
+    .line-numbers .line-numbers-rows > span::before { line-height: 1.5; }
     #blockers-panel pre { margin-top: 0.5rem; }
   </style>
   <script>
@@ -700,6 +704,8 @@ writeTo:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
   <style>
     nav.topnav { background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-card-border-color); padding: 0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
     nav.topnav .brand { font-weight:700; text-decoration:none; color:inherit; }
@@ -709,10 +715,22 @@ writeTo:
     .breadcrumb a:hover { text-decoration:underline; }
     .back-btn { font-size:1.4rem; text-decoration:none; color:var(--pico-muted-color); line-height:1; flex-shrink:0; }
     .back-btn:hover { color:var(--pico-color); }
-    textarea { font-family: monospace; font-size: 0.88rem; }
     .form-actions { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; }
     .form-actions button, .form-actions a[role=button] { margin:0; }
+    /* CodeMirror */
+    .CodeMirror {
+      height: 480px;
+      font-size: 0.88rem;
+      font-family: monospace;
+      border: 1px solid var(--pico-form-element-border-color);
+      border-radius: var(--pico-border-radius);
+      line-height: 1.5;
+    }
+    .CodeMirror-scroll { padding-bottom: 0.5rem; }
+    label.yaml-label { display:block; margin-bottom:0.25rem; font-weight:500; }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
 </head>
 <body>
 <nav class="topnav">
@@ -726,15 +744,16 @@ writeTo:
     <h2 style="margin:0">%s</h2>
   </div>
   %s
-  <form method="POST" action="%s">
+  <form id="config-form" method="POST" action="%s">
     <label for="name">Config Name
       <input type="text" id="name" name="name" value="%s" placeholder="e.g. Japan prod freeze" required>
     </label>
     %s
     %s
-    <label for="config_yaml">Config YAML
-      <textarea id="config_yaml" name="config_yaml" rows="22" placeholder="%s">%s</textarea>
-    </label>
+    <div style="margin-bottom:1rem">
+      <label class="yaml-label" for="config_yaml">Config YAML</label>
+      <textarea id="config_yaml" name="config_yaml" placeholder="%s" style="display:none">%s</textarea>
+    </div>
     <div class="form-actions">
       <button type="submit">Save</button>
       %s
@@ -742,6 +761,21 @@ writeTo:
     </div>
   </form>
 </div>
+<script>
+window.cmEditor = CodeMirror.fromTextArea(document.getElementById('config_yaml'), {
+  mode: 'yaml',
+  theme: 'dracula',
+  lineNumbers: true,
+  lineWrapping: true,
+  tabSize: 2,
+  indentWithTabs: false,
+  autofocus: false,
+  extraKeys: { Tab: function(cm) { cm.replaceSelection('  '); } }
+});
+document.getElementById('config-form').addEventListener('submit', function() {
+  window.cmEditor.save();
+});
+</script>
 </body>
 </html>`,
 		html.EscapeString(title),
