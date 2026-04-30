@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -367,6 +368,12 @@ func (h *ConfigHandler) runWipe(ctx context.Context, userID int64, cfg *db.Confi
 	return "Wipe complete. All managed blockers removed in the date range.", false
 }
 
+type blockerItem struct {
+	Date    string `json:"date"`
+	Summary string `json:"summary"`
+	ID      string `json:"id"`
+}
+
 func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.Config) string {
 	appCfg, err := h.parseAppConfig(cfg.ConfigYAML)
 	if err != nil {
@@ -382,21 +389,33 @@ func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.
 		return actionResultHTML("List Blockers", "failed to list blockers: "+err.Error(), true)
 	}
 	if len(blockers) == 0 {
-		return `<p style="color:var(--pico-muted-color);text-align:center;padding:1rem"><em>No blockers found in the date range.</em></p>`
+		return `<p style="color:var(--pico-muted-color);text-align:center;padding:1rem"><em>No blocker events found in the date range.</em></p>`
 	}
-	rows := ""
+
+	items := make([]blockerItem, 0, len(blockers))
 	for _, b := range blockers {
-		rows += fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td style="font-size:0.8rem;color:var(--pico-muted-color)">%s</td></tr>`,
-			html.EscapeString(b.Start.Format("2006-01-02 15:04")),
-			html.EscapeString(b.Summary),
-			html.EscapeString(b.ID),
-		)
+		items = append(items, blockerItem{
+			Date:    b.Start.Format("2006-01-02"),
+			Summary: b.Summary,
+			ID:      b.ID,
+		})
 	}
+	jsonBytes, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return actionResultHTML("List Blockers", "failed to format result: "+err.Error(), true)
+	}
+
+	rangeLabel := fmt.Sprintf("%s → %s",
+		rangeStart.Format("2006-01-02"),
+		rangeEnd.Format("2006-01-02"),
+	)
 	return fmt.Sprintf(`
-<table style="font-size:0.9rem">
-  <thead><tr><th>Date</th><th>Summary</th><th>Event ID</th></tr></thead>
-  <tbody>%s</tbody>
-</table>`, rows)
+<div>
+  <div style="font-size:0.88rem;color:var(--pico-muted-color);margin-bottom:0.5rem">
+    Blocker Events &nbsp;·&nbsp; <strong style="color:var(--pico-color)">%d found</strong> &nbsp;·&nbsp; range %s
+  </div>
+  <pre class="line-numbers language-json" style="white-space:pre-wrap;word-break:break-word;margin:0"><code>%s</code></pre>
+</div>`, len(items), html.EscapeString(rangeLabel), html.EscapeString(string(jsonBytes)))
 }
 
 // --- HTML fragments ---
@@ -465,7 +484,13 @@ func configDetailHTML(cfg *db.Config) string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.css">
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-yaml.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.js" defer></script>
   <style>
     nav.topnav { background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-card-border-color); padding: 0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
     nav.topnav .brand { font-weight:700; text-decoration:none; color:inherit; }
@@ -478,9 +503,14 @@ func configDetailHTML(cfg *db.Config) string {
     .back-btn:hover { color:var(--pico-color); }
     .action-bar { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
     .action-bar button, .action-bar a[role=button] { margin:0; padding:0.45rem 1rem; font-size:0.88rem; }
-    pre { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius:0.5rem; padding:1rem; overflow-x:auto; font-size:0.85rem; }
     .ack { opacity:0.65; font-style:italic; padding:0.5rem 0; font-size:0.9rem; }
+    pre[class*="language-"] { white-space: pre-wrap; word-break: break-word; font-size: 0.84rem; border-radius: 0.5rem; }
+    /* re-highlight HTMX-swapped content */
+    #blockers-panel pre { margin-top: 0.5rem; }
   </style>
+  <script>
+    document.addEventListener('htmx:afterSwap', function() { Prism.highlightAll(); });
+  </script>
 </head>
 <body>
 <nav class="topnav">
@@ -542,7 +572,7 @@ func configDetailHTML(cfg *db.Config) string {
 
   <details open style="margin-top:1rem">
     <summary style="cursor:pointer;font-weight:600">Config YAML</summary>
-    <pre><code>%s</code></pre>
+    <pre class="line-numbers language-yaml"><code>%s</code></pre>
   </details>
 
   <div id="blockers-panel" style="margin-top:1.5rem"></div>
