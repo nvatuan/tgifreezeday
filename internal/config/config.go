@@ -2,16 +2,9 @@ package config
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nvat/tgifreezeday/internal/helpers"
 	"gopkg.in/yaml.v3"
-)
-
-const (
-	GoogleOAuthClientIDEnv     = "GOOGLE_OAUTH_CLIENT_ID"     // nolint:gosec
-	GoogleOAuthClientSecretEnv = "GOOGLE_OAUTH_CLIENT_SECRET" // nolint:gosec
-	ConfigPathEnv              = "CONFIG_PATH"
 )
 
 type SharedConfig struct {
@@ -51,20 +44,6 @@ type Config struct {
 	Shared   SharedConfig   `yaml:"shared"`
 	ReadFrom ReadFromConfig `yaml:"readFrom"`
 	WriteTo  WriteToConfig  `yaml:"writeTo"`
-}
-
-func LoadWithDefault() (*Config, error) {
-	configPath := os.Getenv(ConfigPathEnv)
-	if configPath == "" {
-		configPath = "config.yaml"
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	return LoadWithDefaultFromByteArray(data)
 }
 
 func LoadWithDefaultFromByteArray(data []byte) (*Config, error) {

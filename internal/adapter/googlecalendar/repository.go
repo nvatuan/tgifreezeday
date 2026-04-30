@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 
@@ -24,16 +25,15 @@ type Repository struct {
 	calendarTZ      *time.Location
 }
 
-// NewRepository creates a new Google Calendar repository for holiday calendar
-func NewRepository(
+// NewRepositoryWithToken creates a Google Calendar repository using a stored OAuth token.
+func NewRepositoryWithToken(
 	ctx context.Context,
+	oauthCfg *oauth2.Config,
+	token *oauth2.Token,
 	countryCode,
 	writeCalendarID string,
 ) (*Repository, error) {
-	httpClient, err := NewOAuthHTTPClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OAuth client: %w", err)
-	}
+	httpClient := NewHTTPClientFromToken(ctx, oauthCfg, token)
 
 	service, err := calendar.NewService(ctx, option.WithHTTPClient(httpClient))
 	if err != nil {
@@ -45,7 +45,6 @@ func NewRepository(
 		return nil, fmt.Errorf("failed to get holiday calendar ID: %w", err)
 	}
 
-	// Get calendar timezone
 	cal, err := service.Calendars.Get(writeCalendarID).Do()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get calendar info: %w", err)
