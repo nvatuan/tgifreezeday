@@ -32,13 +32,32 @@ The project follows Go best practices with clean architecture:
 
 - Go 1.24+
 - Google Calendar API access
-- Service account with calendar permissions
+- OAuth 2.0 Client ID credentials (Desktop app type) from Google Cloud Console
 
 ### Configuration
 
-- Set `GOOGLE_APP_CLIENT_CRED_JSON_PATH` to your service account JSON
-  - For ReadFrom: need to enable Calendar API in your Google Project
-  - For WriteTo: need to add the permissions of service account handler to your target calendar.
+#### Google OAuth credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+2. Create an **OAuth 2.0 Client ID** with application type **Desktop app**
+3. Enable the **Google Calendar API** in your project
+4. Copy the Client ID and Client Secret from the credentials page
+
+Set the following environment variables:
+
+```bash
+export GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+```
+
+**First run:** a browser window opens for you to log in and grant calendar access. The resulting token is cached at `~/.config/tgifreezeday/token.json` (macOS: `~/Library/Application Support/tgifreezeday/token.json`). Subsequent runs use the cached token and refresh it automatically.
+
+To override the token cache location:
+```bash
+export GOOGLE_OAUTH_TOKEN_CACHE_PATH=/path/to/token.json
+```
+
+To reset authorization (e.g. switch accounts), delete the token cache and re-run.
 
 - Set `LOG_LEVEL` to control logging verbosity (debug, info, warn, error, fatal, panic). Default: info
 - Set `LOG_FORMAT` to control log output format (json, text, colored). Default: json

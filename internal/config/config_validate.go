@@ -36,15 +36,12 @@ var supportedChecks = []string{
 }
 
 func (c *Config) Validate() error {
-	// Validate Google credentials path
-	credPath := os.Getenv(GoogleAppClientCredJSONPathEnv)
-	if credPath == "" {
-		return fmt.Errorf("environment variable %s is required", GoogleAppClientCredJSONPathEnv)
+	// Validate OAuth credentials
+	if os.Getenv(GoogleOAuthClientIDEnv) == "" {
+		return fmt.Errorf("environment variable %s is required", GoogleOAuthClientIDEnv)
 	}
-
-	// Validate credentials file exists
-	if _, err := os.Stat(credPath); os.IsNotExist(err) {
-		return fmt.Errorf("google credentials file not found: %s", credPath)
+	if os.Getenv(GoogleOAuthClientSecretEnv) == "" {
+		return fmt.Errorf("environment variable %s is required", GoogleOAuthClientSecretEnv)
 	}
 
 	// Validate Shared block

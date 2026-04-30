@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	GoogleAppClientCredJSONPathEnv = "GOOGLE_APP_CLIENT_CRED_JSON_PATH" // nolint:gosec
-	ConfigPathEnv                  = "CONFIG_PATH"
+	GoogleOAuthClientIDEnv     = "GOOGLE_OAUTH_CLIENT_ID"     // nolint:gosec
+	GoogleOAuthClientSecretEnv = "GOOGLE_OAUTH_CLIENT_SECRET" // nolint:gosec
+	ConfigPathEnv              = "CONFIG_PATH"
 )
 
 type SharedConfig struct {
