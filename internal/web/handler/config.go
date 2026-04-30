@@ -525,11 +525,14 @@ func configDetailHTML(cfg *db.Config) string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/themes/prism-tomorrow.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.css">
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-yaml.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.js" defer></script>
   <style>
@@ -545,13 +548,30 @@ func configDetailHTML(cfg *db.Config) string {
     .action-bar { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
     .action-bar button, .action-bar a[role=button] { margin:0; padding:0.45rem 1rem; font-size:0.88rem; }
     .ack { opacity:0.65; font-style:italic; padding:0.5rem 0; font-size:0.9rem; }
-    /* Prism: override Pico.css line-height so numbers and code stay flush */
+    /* CodeMirror read-only viewer */
+    .CodeMirror { height: auto; font-size: 0.88rem; line-height: 1.5; border: 1px solid var(--pico-card-border-color); border-radius: 0.5rem; }
+    .CodeMirror-cursor { display: none !important; }
+    /* Prism for HTMX-injected JSON blockers */
     pre[class*="language-"] { line-height: 1.5 !important; white-space: pre-wrap; word-break: break-word; font-size: 0.84rem; border-radius: 0.5rem; }
     .line-numbers .line-numbers-rows > span::before { line-height: 1.5; }
     #blockers-panel pre { margin-top: 0.5rem; }
   </style>
   <script>
     document.addEventListener('htmx:afterSwap', function() { Prism.highlightAll(); });
+    document.addEventListener('DOMContentLoaded', function() {
+      var ta = document.getElementById('yaml-viewer');
+      if (ta && typeof CodeMirror !== 'undefined') {
+        CodeMirror.fromTextArea(ta, {
+          mode: 'yaml',
+          theme: 'dracula',
+          lineNumbers: true,
+          lineWrapping: true,
+          readOnly: true,
+          viewportMargin: Infinity,
+          cursorBlinkRate: -1
+        });
+      }
+    });
   </script>
 </head>
 <body>
@@ -614,7 +634,9 @@ func configDetailHTML(cfg *db.Config) string {
 
   <details open style="margin-top:1rem">
     <summary style="cursor:pointer;font-weight:600">Config YAML</summary>
-    <pre class="line-numbers language-yaml"><code>%s</code></pre>
+    <div style="margin-top:0.5rem">
+      <textarea id="yaml-viewer" style="display:none">%s</textarea>
+    </div>
   </details>
 
   <div id="blockers-panel" style="margin-top:1.5rem"></div>
