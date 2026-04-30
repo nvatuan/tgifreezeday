@@ -140,15 +140,15 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
 	}
 
 	filterBar := fmt.Sprintf(`
-<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1.25rem">
+<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1.25rem">
   <a href="/dashboard" role="button" %s %s>All</a>
   <a href="/dashboard?filter=mine" role="button" %s %s>Mine</a>
-  <select %s onchange="this.value?location.href='/dashboard?author='+this.value:location.href='/dashboard'"
-          style="margin:0;padding:0.3rem 0.5rem;font-size:0.85rem;width:auto;min-width:140px">
+  <select onchange="this.value?location.href='/dashboard?author='+this.value:location.href='/dashboard'"
+          style="margin:0;padding:0.3rem 0.5rem;font-size:0.85rem;width:180px;flex-shrink:0">
     %s
   </select>
-  <small style="color:var(--pico-muted-color)">%d config(s)</small>
-</div>`, allClass, btnStyle, mineClass, btnStyle, btnStyle, authorOpts, len(rows))
+  <small style="color:var(--pico-muted-color);margin-left:0.5rem;white-space:nowrap">%d config(s)</small>
+</div>`, allClass, btnStyle, mineClass, btnStyle, authorOpts, len(rows))
 
 	// --- config cards ---
 	cards := ""
