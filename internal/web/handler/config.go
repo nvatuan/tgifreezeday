@@ -60,7 +60,7 @@ func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 	cals := h.fetchCalendars(r.Context(), user.ID)
 	schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configFormHTML("New Config", "/configs", "", "", string(schemaYAML), "", false, cals))
+	fmt.Fprint(w, configFormHTML("New Config", "/configs", "/dashboard", appconfig.CurrentSchemaVersion, "", "", string(schemaYAML), "", false, cals))
 }
 
 // HandleCreate processes the config creation form.
@@ -77,7 +77,7 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		cals := h.fetchCalendars(r.Context(), user.ID)
 		schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, configFormHTML("New Config", "/configs", name, yamlContent, string(schemaYAML), "Name is required.", false, cals))
+		fmt.Fprint(w, configFormHTML("New Config", "/configs", "/dashboard", appconfig.CurrentSchemaVersion, name, yamlContent, string(schemaYAML), "Name is required.", false, cals))
 		return
 	}
 
@@ -125,7 +125,8 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	schemaYAML, _ := appconfig.SchemaYAML(cfg.SchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	action := fmt.Sprintf("/configs/%d", id)
-	fmt.Fprint(w, configFormHTML("Edit Config", action, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cals))
+	backURL := fmt.Sprintf("/configs/%d", id)
+	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, cfg.SchemaVersion, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cals))
 }
 
 // HandleUpdate processes the config edit form.
@@ -175,7 +176,9 @@ func (h *ConfigHandler) doDelete(w http.ResponseWriter, r *http.Request, id, use
 	redirectTo(w, r, "/dashboard")
 }
 
-// HandleValidate re-validates a config and returns status badge HTML (HTMX).
+// HandleValidate re-validates a config. Returns HTMX OOB response:
+// - swaps #action-result with a "Validate finished: X → Y" message
+// - OOB-swaps #status-badge with the updated badge
 func (h *ConfigHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
 	id, ok := idFromPath(r)
@@ -188,12 +191,13 @@ func (h *ConfigHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
-	status, msg := h.validateConfig(r.Context(), user.ID, cfg.ConfigYAML)
-	if err := h.configs.UpdateStatus(id, status, msg); err != nil {
+	oldStatus := cfg.Status
+	newStatus, msg := h.validateConfig(r.Context(), user.ID, cfg.ConfigYAML)
+	if err := h.configs.UpdateStatus(id, newStatus, msg); err != nil {
 		log.WithError(err).Error("failed to update config status after validate")
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, statusBadgeHTML(status, msg))
+	fmt.Fprint(w, validateResultHTML(oldStatus, newStatus, msg))
 }
 
 // HandleSync runs sync and returns result HTML (HTMX).
@@ -420,6 +424,40 @@ func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.
 
 // --- HTML fragments ---
 
+// validateResultHTML returns an HTMX OOB response: primary content for #action-result
+// plus an out-of-band swap to update #status-badge simultaneously.
+func validateResultHTML(oldStatus, newStatus db.ConfigStatus, msg string) string {
+	var summary string
+	if oldStatus == newStatus {
+		summary = fmt.Sprintf("Status unchanged: <strong>%s</strong>", html.EscapeString(string(newStatus)))
+	} else {
+		summary = fmt.Sprintf("Status updated: <strong>%s</strong> &rarr; <strong>%s</strong>",
+			html.EscapeString(string(oldStatus)), html.EscapeString(string(newStatus)))
+	}
+	isErr := newStatus == db.ConfigStatusInvalid || newStatus == db.ConfigStatusUnauthorized
+	bg, border, color := "#1a4731", "#166534", "#4ade80"
+	if isErr {
+		bg, border, color = "#4a1122", "#7f1d1d", "#f87171"
+	}
+
+	detail := ""
+	if msg != "" {
+		detail = fmt.Sprintf(`<div style="margin-top:0.3rem;font-size:0.85rem;opacity:0.8">%s</div>`, html.EscapeString(msg))
+	}
+
+	// Primary content replaces #action-result.
+	// OOB span replaces #status-badge without a second request.
+	return fmt.Sprintf(`
+<div style="background:%s;border:1px solid %s;color:%s;padding:0.75rem 1rem;border-radius:0.5rem;margin-top:0.75rem;font-size:0.9rem">
+  <strong>Validate finished.</strong> %s%s
+</div>
+<span id="status-badge" hx-swap-oob="true">%s</span>`,
+		bg, border, color,
+		summary, detail,
+		statusBadgeHTML(newStatus, ""),
+	)
+}
+
 func statusBadgeHTML(status db.ConfigStatus, msg string) string {
 	badge := statusBadge(status)
 	if msg != "" {
@@ -451,10 +489,10 @@ func calendarOptions(cals []*googlecalendar.CalendarItem) string {
 <details style="margin-bottom:1rem">
   <summary style="cursor:pointer;font-weight:600">📅 Pick target calendar</summary>
   <div style="margin-top:0.75rem">
-    <select id="cal-picker" onchange="applyCalendarId(this.value)" style="margin-bottom:0">
+    <select id="cal-picker" onchange="applyCalendarId(this.value)">
       %s
     </select>
-    <small style="color:var(--pico-muted-color)">Selecting a calendar inserts its ID into the YAML below.</small>
+    <small style="display:block;margin-top:0.4rem;color:var(--pico-muted-color)">Selecting a calendar inserts its ID into the YAML below.</small>
   </div>
 </details>
 <script>
@@ -533,9 +571,9 @@ func configDetailHTML(cfg *db.Config) string {
   <div class="action-bar">
     <button
       hx-post="/configs/%d/validate"
-      hx-target="#status-badge"
+      hx-target="#action-result"
       hx-swap="innerHTML"
-      hx-on::before-request="document.getElementById('status-badge').innerHTML='<em class=ack>checking&#8230;</em>'"
+      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>🔍 Validating&#8230;</p>';document.getElementById('status-badge').innerHTML='<em class=ack>checking&#8230;</em>'"
       class="outline"
       title="Re-check the config YAML and verify calendar write access">
       🔍 Validate
@@ -589,11 +627,22 @@ func configDetailHTML(cfg *db.Config) string {
 	)
 }
 
-func configFormHTML(title, action, name, yamlContent, schemaYAML, formErr string, isEdit bool, cals []*googlecalendar.CalendarItem) string {
+func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, schemaYAML, formErr string, isEdit bool, cals []*googlecalendar.CalendarItem) string {
 	errHTML := ""
 	if formErr != "" {
 		errHTML = fmt.Sprintf(`<div style="background:#4a1122;border:1px solid #7f1d1d;color:#f87171;padding:0.75rem 1rem;border-radius:0.5rem;margin-bottom:1rem">%s</div>`,
 			html.EscapeString(formErr))
+	}
+
+	// Breadcrumb: "Configs › Name › Edit" or "Configs › New Config"
+	var breadcrumb, pageHeader string
+	if isEdit {
+		breadcrumb = fmt.Sprintf(`<a href="/dashboard">Configs</a> &rsaquo; <a href="%s">%s</a> &rsaquo; Edit`,
+			html.EscapeString(backURL), html.EscapeString(name))
+		pageHeader = fmt.Sprintf(`Edit: %s`, html.EscapeString(name))
+	} else {
+		breadcrumb = `<a href="/dashboard">Configs</a> &rsaquo; New Config`
+		pageHeader = `New Config`
 	}
 
 	placeholder := `shared:
@@ -620,9 +669,29 @@ writeTo:
 		deleteBtn = `<button type="submit" name="_method" value="DELETE" class="outline contrast" onclick="return confirm('Delete this config?')" style="margin:0">Delete</button>`
 	}
 
-	_ = schemaYAML // available for future inline schema help
+	_ = schemaYAML
 
 	calPicker := calendarOptions(cals)
+
+	schemaPicker := fmt.Sprintf(`
+<label for="schema_version">Schema Version
+  <div style="display:flex;align-items:center;gap:0.5rem">
+    <select id="schema_version" name="schema_version" style="flex:1;margin:0">
+      <option value="v1"%s>v1 (current)</option>
+    </select>
+    <a href="/schema/%s" target="_blank" title="View schema reference for %s"
+       style="font-size:1.1rem;text-decoration:none;flex-shrink:0">ℹ️</a>
+  </div>
+</label>`,
+		func() string {
+			if schemaVersion == "v1" {
+				return " selected"
+			}
+			return ""
+		}(),
+		html.EscapeString(schemaVersion),
+		html.EscapeString(schemaVersion),
+	)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -635,6 +704,11 @@ writeTo:
     nav.topnav { background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-card-border-color); padding: 0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
     nav.topnav .brand { font-weight:700; text-decoration:none; color:inherit; }
     .page-content { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
+    .breadcrumb { font-size:0.82rem; color:var(--pico-muted-color); margin-bottom:0.4rem; }
+    .breadcrumb a { color:var(--pico-muted-color); text-decoration:none; }
+    .breadcrumb a:hover { text-decoration:underline; }
+    .back-btn { font-size:1.4rem; text-decoration:none; color:var(--pico-muted-color); line-height:1; flex-shrink:0; }
+    .back-btn:hover { color:var(--pico-color); }
     textarea { font-family: monospace; font-size: 0.88rem; }
     .form-actions { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; }
     .form-actions button, .form-actions a[role=button] { margin:0; }
@@ -646,12 +720,17 @@ writeTo:
   <div>%s</div>
 </nav>
 <div class="page-content">
-  <h2>%s</h2>
+  <div class="breadcrumb">%s</div>
+  <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem">
+    <a href="%s" class="back-btn" title="Go back">&#8592;</a>
+    <h2 style="margin:0">%s</h2>
+  </div>
   %s
   <form method="POST" action="%s">
     <label for="name">Config Name
       <input type="text" id="name" name="name" value="%s" placeholder="e.g. Japan prod freeze" required>
     </label>
+    %s
     %s
     <label for="config_yaml">Config YAML
       <textarea id="config_yaml" name="config_yaml" rows="22" placeholder="%s">%s</textarea>
@@ -659,7 +738,7 @@ writeTo:
     <div class="form-actions">
       <button type="submit">Save</button>
       %s
-      <a href="/dashboard" role="button" class="outline secondary">Cancel</a>
+      <a href="%s" role="button" class="outline secondary">Cancel</a>
     </div>
   </form>
 </div>
@@ -667,13 +746,17 @@ writeTo:
 </html>`,
 		html.EscapeString(title),
 		logoutForm,
-		html.EscapeString(title),
+		breadcrumb,
+		html.EscapeString(backURL),
+		pageHeader,
 		errHTML,
 		html.EscapeString(action),
 		html.EscapeString(name),
+		schemaPicker,
 		calPicker,
 		placeholder,
 		html.EscapeString(yamlContent),
 		deleteBtn,
+		html.EscapeString(backURL),
 	)
 }

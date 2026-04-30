@@ -86,6 +86,9 @@ func main() {
 	mux.Handle("POST /configs/{id}/wipe", requireAuth(http.HandlerFunc(cfgH.HandleWipe)))
 	mux.Handle("GET /configs/{id}/blockers", requireAuth(http.HandlerFunc(cfgH.HandleListBlockers)))
 
+	// Schema reference (public — no auth needed, no secrets exposed)
+	mux.HandleFunc("GET /schema/{version}", handler.HandleSchemaRef)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
