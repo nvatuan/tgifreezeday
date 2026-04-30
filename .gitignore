@@ -8,4 +8,5 @@ coverage.out
 coverage.html
 
 # Database files
-*.db
+*.db*.db-shm
+*.db-wal
