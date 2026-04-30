@@ -167,7 +167,7 @@ const loginPageHTML = `<!DOCTYPE html>
       text-align: center;
       box-shadow: 0 8px 32px rgba(0,0,0,0.3);
     }
-    .login-card .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+    .login-card .icon { font-size: 2rem; letter-spacing: 0.15em; margin-bottom: 0.75rem; }
     .login-card h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
     .login-card p { color: var(--pico-muted-color); margin-bottom: 2rem; font-size: 0.95rem; }
     .google-btn {
@@ -192,7 +192,7 @@ const loginPageHTML = `<!DOCTYPE html>
 <body>
   <div class="login-wrap">
     <div class="login-card">
-      <div class="icon">🛑</div>
+      <div class="icon">🙏 🙌 🧊 ☀️ 🍺</div>
       <h1>TGI Freeze Day</h1>
       <p>Manage production freeze day blockers<br>on your team calendar.</p>
       <a href="/oauth/start" class="google-btn">
