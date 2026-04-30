@@ -22,7 +22,7 @@ type ConfigHandler struct {
 	configs     *db.ConfigStore
 	tokens      *db.TokenStore
 	oauthCfg    *oauth2.Config
-	validateSem chan struct{} // limits concurrent background validations
+	validateSem chan struct{}
 }
 
 func NewConfigHandler(configs *db.ConfigStore, tokens *db.TokenStore) *ConfigHandler {
@@ -40,11 +40,26 @@ func idFromPath(r *http.Request) (int64, bool) {
 	return id, err == nil
 }
 
+func (h *ConfigHandler) fetchCalendars(ctx context.Context, userID int64) []*googlecalendar.CalendarItem {
+	token, err := h.getToken(userID)
+	if err != nil {
+		return nil
+	}
+	items, err := googlecalendar.ListWritableCalendars(ctx, h.oauthCfg, token)
+	if err != nil {
+		log.WithError(err).Warn("failed to list writable calendars for form")
+		return nil
+	}
+	return items
+}
+
 // HandleNew renders the config creation form.
 func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	cals := h.fetchCalendars(r.Context(), user.ID)
 	schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configFormHTML("New Config", "/configs", "", "", string(schemaYAML), "", false))
+	fmt.Fprint(w, configFormHTML("New Config", "/configs", "", "", string(schemaYAML), "", false, cals))
 }
 
 // HandleCreate processes the config creation form.
@@ -58,9 +73,10 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	yamlContent := r.FormValue("config_yaml")
 
 	if name == "" {
+		cals := h.fetchCalendars(r.Context(), user.ID)
 		schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, configFormHTML("New Config", "/configs", name, yamlContent, string(schemaYAML), "Name is required.", false))
+		fmt.Fprint(w, configFormHTML("New Config", "/configs", name, yamlContent, string(schemaYAML), "Name is required.", false, cals))
 		return
 	}
 
@@ -71,7 +87,6 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go h.validateAndUpdateStatus(cfg.ID, user.ID, yamlContent)
-
 	redirectTo(w, r, fmt.Sprintf("/configs/%d", cfg.ID))
 }
 
@@ -105,10 +120,11 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
+	cals := h.fetchCalendars(r.Context(), user.ID)
 	schemaYAML, _ := appconfig.SchemaYAML(cfg.SchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	action := fmt.Sprintf("/configs/%d", id)
-	fmt.Fprint(w, configFormHTML("Edit Config", action, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true))
+	fmt.Fprint(w, configFormHTML("Edit Config", action, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cals))
 }
 
 // HandleUpdate processes the config edit form.
@@ -123,7 +139,6 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid form")
 		return
 	}
-
 	if r.FormValue("_method") == "DELETE" {
 		h.doDelete(w, r, id, user.ID)
 		return
@@ -136,9 +151,7 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusInternalServerError, "failed to update config")
 		return
 	}
-
 	go h.validateAndUpdateStatus(id, user.ID, yamlContent)
-
 	redirectTo(w, r, fmt.Sprintf("/configs/%d", id))
 }
 
@@ -174,17 +187,15 @@ func (h *ConfigHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
-
 	status, msg := h.validateConfig(r.Context(), user.ID, cfg.ConfigYAML)
 	if err := h.configs.UpdateStatus(id, status, msg); err != nil {
 		log.WithError(err).Error("failed to update config status after validate")
 	}
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, statusBadgeHTML(status, msg))
 }
 
-// HandleSync runs sync for a config and returns result HTML (HTMX).
+// HandleSync runs sync and returns result HTML (HTMX).
 func (h *ConfigHandler) HandleSync(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
 	id, ok := idFromPath(r)
@@ -197,13 +208,12 @@ func (h *ConfigHandler) HandleSync(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
-
 	msg, isErr := h.runSync(r.Context(), user.ID, cfg)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, actionResultHTML("Sync", msg, isErr))
 }
 
-// HandleWipe wipes blockers for a config and returns result HTML (HTMX).
+// HandleWipe wipes blockers and returns result HTML (HTMX).
 func (h *ConfigHandler) HandleWipe(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
 	id, ok := idFromPath(r)
@@ -216,7 +226,6 @@ func (h *ConfigHandler) HandleWipe(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
-
 	msg, isErr := h.runWipe(r.Context(), user.ID, cfg)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, actionResultHTML("Wipe", msg, isErr))
@@ -235,7 +244,6 @@ func (h *ConfigHandler) HandleListBlockers(w http.ResponseWriter, r *http.Reques
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
-
 	html := h.listBlockers(r.Context(), user.ID, cfg)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, html)
@@ -270,12 +278,10 @@ func (h *ConfigHandler) validateConfig(ctx context.Context, userID int64, yamlCo
 	if err != nil {
 		return db.ConfigStatusInvalid, err.Error()
 	}
-
 	token, err := h.getToken(userID)
 	if err != nil {
 		return db.ConfigStatusInvalid, err.Error()
 	}
-
 	_, err = googlecalendar.NewRepositoryWithToken(ctx, h.oauthCfg, token,
 		appCfg.ReadFrom.GoogleCalendar.CountryCode,
 		appCfg.WriteTo.GoogleCalendar.ID,
@@ -287,7 +293,6 @@ func (h *ConfigHandler) validateConfig(ctx context.Context, userID int64, yamlCo
 		}
 		return db.ConfigStatusInvalid, err.Error()
 	}
-
 	return db.ConfigStatusValid, ""
 }
 
@@ -296,9 +301,8 @@ func (h *ConfigHandler) validateAndUpdateStatus(configID, userID int64, yamlCont
 	case h.validateSem <- struct{}{}:
 		defer func() { <-h.validateSem }()
 	default:
-		return // semaphore full; skip — will retry on next explicit validate
+		return
 	}
-
 	status, msg := h.validateConfig(context.Background(), userID, yamlContent)
 	if err := h.configs.UpdateStatus(configID, status, msg); err != nil {
 		log.WithError(err).Error("failed to update config status after background validation")
@@ -321,26 +325,20 @@ func (h *ConfigHandler) runSync(ctx context.Context, userID int64, cfg *db.Confi
 	if err != nil {
 		return err.Error(), true
 	}
-
 	repo, err := h.buildRepo(ctx, userID, appCfg)
 	if err != nil {
 		return err.Error(), true
 	}
-
 	rangeStart, rangeEnd := dateRange(appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
-
 	tgifMapping, err := repo.GetFreezeDaysInRange(rangeStart, rangeEnd)
 	if err != nil {
 		return "failed to get freeze days: " + err.Error(), true
 	}
-
 	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
 		return "failed to wipe existing blockers: " + err.Error(), true
 	}
-
 	summary := *appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary
 	description := *appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description
-
 	count := 0
 	for _, day := range *tgifMapping {
 		if day.IsTodayFreezeDay(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) {
@@ -350,8 +348,7 @@ func (h *ConfigHandler) runSync(ctx context.Context, userID int64, cfg *db.Confi
 			count++
 		}
 	}
-
-	return fmt.Sprintf("Sync complete. Created %d blocker event(s) in %d days checked.", count, len(*tgifMapping)), false
+	return fmt.Sprintf("Sync complete. Created %d blocker event(s) across %d days checked.", count, len(*tgifMapping)), false
 }
 
 func (h *ConfigHandler) runWipe(ctx context.Context, userID int64, cfg *db.Config) (string, bool) {
@@ -359,17 +356,14 @@ func (h *ConfigHandler) runWipe(ctx context.Context, userID int64, cfg *db.Confi
 	if err != nil {
 		return err.Error(), true
 	}
-
 	repo, err := h.buildRepo(ctx, userID, appCfg)
 	if err != nil {
 		return err.Error(), true
 	}
-
 	rangeStart, rangeEnd := dateRange(appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
 	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
 		return "failed to wipe blockers: " + err.Error(), true
 	}
-
 	return "Wipe complete. All managed blockers removed in the date range.", false
 }
 
@@ -378,32 +372,28 @@ func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.
 	if err != nil {
 		return actionResultHTML("List Blockers", err.Error(), true)
 	}
-
 	repo, err := h.buildRepo(ctx, userID, appCfg)
 	if err != nil {
 		return actionResultHTML("List Blockers", err.Error(), true)
 	}
-
 	rangeStart, rangeEnd := dateRange(appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
 	blockers, err := repo.ListAllBlockersInRange(rangeStart, rangeEnd)
 	if err != nil {
 		return actionResultHTML("List Blockers", "failed to list blockers: "+err.Error(), true)
 	}
-
 	if len(blockers) == 0 {
-		return `<p><em>No blockers found in the date range.</em></p>`
+		return `<p style="color:var(--pico-muted-color);text-align:center;padding:1rem"><em>No blockers found in the date range.</em></p>`
 	}
-
 	rows := ""
 	for _, b := range blockers {
-		rows += fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
+		rows += fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td style="font-size:0.8rem;color:var(--pico-muted-color)">%s</td></tr>`,
 			html.EscapeString(b.Start.Format("2006-01-02 15:04")),
 			html.EscapeString(b.Summary),
 			html.EscapeString(b.ID),
 		)
 	}
 	return fmt.Sprintf(`
-<table>
+<table style="font-size:0.9rem">
   <thead><tr><th>Date</th><th>Summary</th><th>Event ID</th></tr></thead>
   <tbody>%s</tbody>
 </table>`, rows)
@@ -414,19 +404,52 @@ func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.
 func statusBadgeHTML(status db.ConfigStatus, msg string) string {
 	badge := statusBadge(status)
 	if msg != "" {
-		return fmt.Sprintf(`%s <small style="color:var(--pico-muted-color)">%s</small>`, badge, html.EscapeString(msg))
+		return fmt.Sprintf(`%s <small style="color:var(--pico-muted-color);font-size:0.8rem">%s</small>`, badge, html.EscapeString(msg))
 	}
 	return badge
 }
 
 func actionResultHTML(action, msg string, isErr bool) string {
-	color := "green"
+	bg, border, color := "#1a4731", "#166534", "#4ade80"
 	if isErr {
-		color = "red"
+		bg, border, color = "#4a1122", "#7f1d1d", "#f87171"
 	}
-	return fmt.Sprintf(`<div style="padding:0.5rem;border-left:3px solid %s;margin-top:0.5rem">
-  <strong>%s result:</strong> %s
-</div>`, color, html.EscapeString(action), html.EscapeString(msg))
+	return fmt.Sprintf(`<div style="background:%s;border:1px solid %s;color:%s;padding:0.75rem 1rem;border-radius:0.5rem;margin-top:0.75rem;font-size:0.9rem">
+  <strong>%s:</strong> %s
+</div>`, bg, border, color, html.EscapeString(action), html.EscapeString(msg))
+}
+
+func calendarOptions(cals []*googlecalendar.CalendarItem) string {
+	if len(cals) == 0 {
+		return ""
+	}
+	opts := `<option value="">-- select to fill calendar ID in YAML --</option>`
+	for _, c := range cals {
+		opts += fmt.Sprintf(`<option value="%s">%s</option>`,
+			html.EscapeString(c.ID), html.EscapeString(c.Summary+" ("+c.ID+")"))
+	}
+	return fmt.Sprintf(`
+<details style="margin-bottom:1rem">
+  <summary style="cursor:pointer;font-weight:600">📅 Pick target calendar</summary>
+  <div style="margin-top:0.75rem">
+    <select id="cal-picker" onchange="applyCalendarId(this.value)" style="margin-bottom:0">
+      %s
+    </select>
+    <small style="color:var(--pico-muted-color)">Selecting a calendar inserts its ID into the YAML below.</small>
+  </div>
+</details>
+<script>
+function applyCalendarId(id) {
+  if (!id) return;
+  const ta = document.getElementById('config_yaml');
+  const updated = ta.value.replace(
+    /(writeTo[\s\S]*?googleCalendar[\s\S]*?id:\s*)["']?[^\n"']*["']?/,
+    '$1"' + id.replace(/"/g, '\\"') + '"'
+  );
+  ta.value = updated !== ta.value ? updated : ta.value;
+  document.getElementById('cal-picker').value = '';
+}
+</script>`, opts)
 }
 
 func configDetailHTML(cfg *db.Config) string {
@@ -436,63 +459,75 @@ func configDetailHTML(cfg *db.Config) string {
 	escapedYAML := html.EscapeString(cfg.ConfigYAML)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+  <style>
+    nav.topnav { background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-card-border-color); padding: 0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
+    nav.topnav .brand { font-weight: 700; }
+    .page-content { max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; }
+    .action-bar { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+    .action-bar button, .action-bar a[role=button] { margin:0; padding:0.45rem 1rem; font-size:0.88rem; }
+    pre { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius:0.5rem; padding:1rem; overflow-x:auto; font-size:0.85rem; }
+  </style>
 </head>
 <body>
-<main class="container">
-  <nav>
-    <ul><li><a href="/dashboard">&#8592; Dashboard</a></li></ul>
-    <ul><li>%s</li></ul>
-  </nav>
-  <hgroup>
-    <h2>%s</h2>
-    <p>Schema: %s &nbsp;|&nbsp; Status: <span id="status-badge">%s</span></p>
-  </hgroup>
+<nav class="topnav">
+  <span class="brand"><a href="/dashboard" style="text-decoration:none;color:inherit">&#8592; TGI Freeze Day</a></span>
+  <div>%s</div>
+</nav>
+<div class="page-content">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem">
+    <div>
+      <h2 style="margin:0 0 0.25rem">%s</h2>
+      <div style="font-size:0.85rem;color:var(--pico-muted-color)">schema: %s &nbsp;·&nbsp; Status: <span id="status-badge">%s</span></div>
+    </div>
+    <a href="/configs/%d/edit" role="button" class="outline" style="margin:0;padding:0.4rem 1rem;font-size:0.88rem">&#9998; Edit</a>
+  </div>
 
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem">
+  <div class="action-bar">
     <button hx-post="/configs/%d/validate" hx-target="#status-badge" hx-swap="innerHTML" class="outline">
-      Validate
+      🔍 Validate
     </button>
     <button hx-post="/configs/%d/sync" hx-target="#action-result" hx-swap="innerHTML">
-      Sync
+      ▶ Sync
     </button>
     <button hx-post="/configs/%d/wipe" hx-target="#action-result" hx-swap="innerHTML" class="outline secondary">
-      Wipe Blockers
+      🗑 Wipe Blockers
     </button>
     <button hx-get="/configs/%d/blockers" hx-target="#blockers-panel" hx-swap="innerHTML" class="outline">
-      List Blockers
+      📋 List Blockers
     </button>
-    <a href="/configs/%d/edit" role="button" class="outline">Edit</a>
   </div>
 
   <div id="action-result"></div>
 
-  <details>
-    <summary>Config YAML</summary>
+  <details style="margin-top:1rem">
+    <summary style="cursor:pointer;font-weight:600">Config YAML</summary>
     <pre><code>%s</code></pre>
   </details>
 
-  <div id="blockers-panel" style="margin-top:1rem"></div>
-</main>
+  <div id="blockers-panel" style="margin-top:1.5rem"></div>
+</div>
 </body>
 </html>`,
 		escapedName, logoutForm,
 		escapedName, escapedSchema, badge,
-		cfg.ID, cfg.ID, cfg.ID, cfg.ID, cfg.ID,
+		cfg.ID,
+		cfg.ID, cfg.ID, cfg.ID, cfg.ID,
 		escapedYAML,
 	)
 }
 
-func configFormHTML(title, action, name, yamlContent, schemaYAML, formErr string, isEdit bool) string {
+func configFormHTML(title, action, name, yamlContent, schemaYAML, formErr string, isEdit bool, cals []*googlecalendar.CalendarItem) string {
 	errHTML := ""
 	if formErr != "" {
-		errHTML = fmt.Sprintf(`<div style="color:red;padding:0.5rem;border-left:3px solid red">%s</div>`, html.EscapeString(formErr))
+		errHTML = fmt.Sprintf(`<div style="background:#4a1122;border:1px solid #7f1d1d;color:#f87171;padding:0.75rem 1rem;border-radius:0.5rem;margin-bottom:1rem">%s</div>`,
+			html.EscapeString(formErr))
 	}
 
 	placeholder := `shared:
@@ -516,42 +551,52 @@ writeTo:
 
 	deleteBtn := ""
 	if isEdit {
-		deleteBtn = `<button type="submit" name="_method" value="DELETE" class="outline contrast" onclick="return confirm('Delete this config?')">Delete</button>`
+		deleteBtn = `<button type="submit" name="_method" value="DELETE" class="outline contrast" onclick="return confirm('Delete this config?')" style="margin:0">Delete</button>`
 	}
 
-	_ = schemaYAML // schema reference shown in future iterations
+	_ = schemaYAML // available for future inline schema help
+
+	calPicker := calendarOptions(cals)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+  <style>
+    nav.topnav { background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-card-border-color); padding: 0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
+    nav.topnav .brand { font-weight: 700; }
+    .page-content { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
+    textarea { font-family: monospace; font-size: 0.88rem; }
+    .form-actions { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; }
+    .form-actions button, .form-actions a[role=button] { margin:0; }
+  </style>
 </head>
 <body>
-<main class="container">
-  <nav>
-    <ul><li><a href="/dashboard">&#8592; Dashboard</a></li></ul>
-    <ul><li>%s</li></ul>
-  </nav>
+<nav class="topnav">
+  <span class="brand"><a href="/dashboard" style="text-decoration:none;color:inherit">&#8592; TGI Freeze Day</a></span>
+  <div>%s</div>
+</nav>
+<div class="page-content">
   <h2>%s</h2>
   %s
   <form method="POST" action="%s">
     <label for="name">Config Name
-      <input type="text" id="name" name="name" value="%s" placeholder="My team freeze config" required>
+      <input type="text" id="name" name="name" value="%s" placeholder="e.g. Japan prod freeze" required>
     </label>
+    %s
     <label for="config_yaml">Config YAML
-      <textarea id="config_yaml" name="config_yaml" rows="20" placeholder="%s" style="font-family:monospace">%s</textarea>
+      <textarea id="config_yaml" name="config_yaml" rows="22" placeholder="%s">%s</textarea>
     </label>
-    <div style="display:flex;gap:0.5rem">
+    <div class="form-actions">
       <button type="submit">Save</button>
       %s
       <a href="/dashboard" role="button" class="outline secondary">Cancel</a>
     </div>
   </form>
-</main>
+</div>
 </body>
 </html>`,
 		html.EscapeString(title),
@@ -560,6 +605,7 @@ writeTo:
 		errHTML,
 		html.EscapeString(action),
 		html.EscapeString(name),
+		calPicker,
 		placeholder,
 		html.EscapeString(yamlContent),
 		deleteBtn,
