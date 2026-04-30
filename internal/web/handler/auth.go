@@ -192,7 +192,7 @@ const loginPageHTML = `<!DOCTYPE html>
 <body>
   <div class="login-wrap">
     <div class="login-card">
-      <div class="icon">🙏 🙌 🧊 ☀️ 🍺</div>
+      <div class="icon">🙏 🧔‍♀️ 🧊 ☀️ 🍺</div>
       <h1>TGI Freeze Day</h1>
       <p>Manage production freeze day blockers<br>on your team calendar.</p>
       <a href="/oauth/start" class="google-btn">

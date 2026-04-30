@@ -468,45 +468,79 @@ func configDetailHTML(cfg *db.Config) string {
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
   <style>
     nav.topnav { background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-card-border-color); padding: 0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
-    nav.topnav .brand { font-weight: 700; }
+    nav.topnav .brand { font-weight:700; text-decoration:none; color:inherit; }
     .page-content { max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; }
+    .breadcrumb { font-size:0.82rem; color:var(--pico-muted-color); margin-bottom:0.4rem; }
+    .breadcrumb a { color:var(--pico-muted-color); text-decoration:none; }
+    .breadcrumb a:hover { text-decoration:underline; }
+    .page-header { display:flex; align-items:center; gap:0.75rem; margin-bottom:0.4rem; }
+    .back-btn { font-size:1.4rem; text-decoration:none; color:var(--pico-muted-color); line-height:1; flex-shrink:0; }
+    .back-btn:hover { color:var(--pico-color); }
     .action-bar { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
     .action-bar button, .action-bar a[role=button] { margin:0; padding:0.45rem 1rem; font-size:0.88rem; }
     pre { background: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius:0.5rem; padding:1rem; overflow-x:auto; font-size:0.85rem; }
+    .ack { opacity:0.65; font-style:italic; padding:0.5rem 0; font-size:0.9rem; }
   </style>
 </head>
 <body>
 <nav class="topnav">
-  <span class="brand"><a href="/dashboard" style="text-decoration:none;color:inherit">&#8592; TGI Freeze Day</a></span>
+  <a href="/dashboard" class="brand">🛑 TGI Freeze Day</a>
   <div>%s</div>
 </nav>
 <div class="page-content">
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem">
-    <div>
-      <h2 style="margin:0 0 0.25rem">%s</h2>
-      <div style="font-size:0.85rem;color:var(--pico-muted-color)">schema: %s &nbsp;·&nbsp; Status: <span id="status-badge">%s</span></div>
+  <div class="breadcrumb"><a href="/dashboard">Configs</a> &rsaquo; %s</div>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem">
+    <div class="page-header">
+      <a href="/dashboard" class="back-btn" title="Back to Configs">&#8592;</a>
+      <h2 style="margin:0">%s</h2>
     </div>
     <a href="/configs/%d/edit" role="button" class="outline" style="margin:0;padding:0.4rem 1rem;font-size:0.88rem">&#9998; Edit</a>
   </div>
+  <div style="font-size:0.85rem;color:var(--pico-muted-color);margin-bottom:1.5rem">
+    schema: %s &nbsp;·&nbsp; Status: <span id="status-badge">%s</span>
+  </div>
 
   <div class="action-bar">
-    <button hx-post="/configs/%d/validate" hx-target="#status-badge" hx-swap="innerHTML" class="outline">
+    <button
+      hx-post="/configs/%d/validate"
+      hx-target="#status-badge"
+      hx-swap="innerHTML"
+      hx-on::before-request="document.getElementById('status-badge').innerHTML='<em class=ack>checking&#8230;</em>'"
+      class="outline"
+      title="Re-check the config YAML and verify calendar write access">
       🔍 Validate
     </button>
-    <button hx-post="/configs/%d/sync" hx-target="#action-result" hx-swap="innerHTML">
+    <button
+      hx-post="/configs/%d/sync"
+      hx-target="#action-result"
+      hx-swap="innerHTML"
+      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Syncing — reading holidays and writing blockers&#8230;</p>'"
+      title="Read public holidays, calculate freeze days, and create blocker events on your calendar">
       ▶ Sync
     </button>
-    <button hx-post="/configs/%d/wipe" hx-target="#action-result" hx-swap="innerHTML" class="outline secondary">
+    <button
+      hx-post="/configs/%d/wipe"
+      hx-target="#action-result"
+      hx-swap="innerHTML"
+      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Wiping blockers&#8230;</p>'"
+      class="outline"
+      title="Remove all managed blocker events in the lookback/lookahead date range">
       🗑 Wipe Blockers
     </button>
-    <button hx-get="/configs/%d/blockers" hx-target="#blockers-panel" hx-swap="innerHTML" class="outline">
+    <button
+      hx-get="/configs/%d/blockers"
+      hx-target="#blockers-panel"
+      hx-swap="innerHTML"
+      hx-on::before-request="document.getElementById('blockers-panel').innerHTML='<p class=ack>⏳ Loading blockers&#8230;</p>'"
+      class="outline"
+      title="List all currently managed blocker events in the date range">
       📋 List Blockers
     </button>
   </div>
 
   <div id="action-result"></div>
 
-  <details style="margin-top:1rem">
+  <details open style="margin-top:1rem">
     <summary style="cursor:pointer;font-weight:600">Config YAML</summary>
     <pre><code>%s</code></pre>
   </details>
@@ -516,8 +550,10 @@ func configDetailHTML(cfg *db.Config) string {
 </body>
 </html>`,
 		escapedName, logoutForm,
-		escapedName, escapedSchema, badge,
+		escapedName,
+		escapedName,
 		cfg.ID,
+		escapedSchema, badge,
 		cfg.ID, cfg.ID, cfg.ID, cfg.ID,
 		escapedYAML,
 	)
@@ -567,7 +603,7 @@ writeTo:
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
     nav.topnav { background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-card-border-color); padding: 0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
-    nav.topnav .brand { font-weight: 700; }
+    nav.topnav .brand { font-weight:700; text-decoration:none; color:inherit; }
     .page-content { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
     textarea { font-family: monospace; font-size: 0.88rem; }
     .form-actions { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; }
@@ -576,7 +612,7 @@ writeTo:
 </head>
 <body>
 <nav class="topnav">
-  <span class="brand"><a href="/dashboard" style="text-decoration:none;color:inherit">&#8592; TGI Freeze Day</a></span>
+  <a href="/dashboard" class="brand">🛑 TGI Freeze Day</a>
   <div>%s</div>
 </nav>
 <div class="page-content">
