@@ -27,9 +27,53 @@ type Config struct {
 	UpdatedAt     time.Time
 }
 
+// ConfigWithAuthor enriches Config with the owning user's display info.
+type ConfigWithAuthor struct {
+	Config
+	AuthorEmail       string
+	AuthorDisplayName string
+}
+
 type ConfigStore struct{ db *sql.DB }
 
 func NewConfigStore(db *sql.DB) *ConfigStore { return &ConfigStore{db: db} }
+
+// ListAllWithAuthor returns all configs joined with their authors.
+// Pass a non-nil filterUserID to restrict to a single user.
+func (s *ConfigStore) ListAllWithAuthor(filterUserID *int64) ([]*ConfigWithAuthor, error) {
+	query := `
+		SELECT c.id, c.user_id, c.name, c.schema_version, c.config_yaml,
+		       c.status, c.status_message, c.created_at, c.updated_at,
+		       u.email, u.display_name
+		FROM configs c
+		JOIN users u ON c.user_id = u.id`
+	var args []interface{}
+	if filterUserID != nil {
+		query += ` WHERE c.user_id = ?`
+		args = append(args, *filterUserID)
+	}
+	query += ` ORDER BY c.updated_at DESC`
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list all configs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*ConfigWithAuthor
+	for rows.Next() {
+		r := &ConfigWithAuthor{}
+		if err := rows.Scan(
+			&r.ID, &r.UserID, &r.Name, &r.SchemaVersion, &r.ConfigYAML,
+			&r.Status, &r.StatusMessage, &r.CreatedAt, &r.UpdatedAt,
+			&r.AuthorEmail, &r.AuthorDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
 
 func (s *ConfigStore) Create(userID int64, name, schemaVersion, configYAML string) (*Config, error) {
 	res, err := s.db.Exec(`

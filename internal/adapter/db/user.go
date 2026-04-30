@@ -48,6 +48,26 @@ func (s *UserStore) GetByID(id int64) (*User, error) {
 	return u, nil
 }
 
+// ListAll returns every user ordered by display_name.
+func (s *UserStore) ListAll() ([]*User, error) {
+	rows, err := s.db.Query(
+		`SELECT id, google_id, email, display_name, created_at FROM users ORDER BY display_name, email`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+	var users []*User
+	for rows.Next() {
+		u := &User{}
+		if err := rows.Scan(&u.ID, &u.GoogleID, &u.Email, &u.DisplayName, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
 func (s *UserStore) GetByGoogleID(googleID string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
