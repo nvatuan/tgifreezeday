@@ -23,16 +23,22 @@ func ListWritableCalendars(ctx context.Context, cfg *oauth2.Config, token *oauth
 		return nil, fmt.Errorf("failed to create calendar service: %w", err)
 	}
 
-	list, err := svc.CalendarList.List().Do()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list calendars: %w", err)
-	}
-
 	var items []*CalendarItem
-	for _, c := range list.Items {
-		if c.AccessRole == "owner" || c.AccessRole == "writer" {
-			items = append(items, &CalendarItem{ID: c.Id, Summary: c.Summary})
+	call := svc.CalendarList.List()
+	for {
+		result, err := call.Do()
+		if err != nil {
+			return nil, fmt.Errorf("failed to list calendars: %w", err)
 		}
+		for _, c := range result.Items {
+			if c.AccessRole == "owner" || c.AccessRole == "writer" {
+				items = append(items, &CalendarItem{ID: c.Id, Summary: c.Summary})
+			}
+		}
+		if result.NextPageToken == "" {
+			break
+		}
+		call = call.PageToken(result.NextPageToken)
 	}
 	return items, nil
 }

@@ -56,10 +56,12 @@ func GetUserID(r *http.Request, secret []byte) (int64, bool) {
 // Clear removes the session cookie.
 func Clear(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:   cookieName,
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 }
 

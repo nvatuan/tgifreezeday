@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -39,7 +40,7 @@ func (s *UserStore) GetByID(id int64) (*User, error) {
 	err := s.db.QueryRow(
 		`SELECT id, google_id, email, display_name, created_at FROM users WHERE id = ?`, id,
 	).Scan(&u.ID, &u.GoogleID, &u.Email, &u.DisplayName, &u.CreatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -73,7 +74,7 @@ func (s *UserStore) GetByGoogleID(googleID string) (*User, error) {
 	err := s.db.QueryRow(
 		`SELECT id, google_id, email, display_name, created_at FROM users WHERE google_id = ?`, googleID,
 	).Scan(&u.ID, &u.GoogleID, &u.Email, &u.DisplayName, &u.CreatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

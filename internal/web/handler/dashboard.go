@@ -19,12 +19,12 @@ type DashboardHandler struct {
 	oauthCfg *oauth2.Config
 }
 
-func NewDashboardHandler(configs *db.ConfigStore, users *db.UserStore, tokens *db.TokenStore) *DashboardHandler {
+func NewDashboardHandler(configs *db.ConfigStore, users *db.UserStore, tokens *db.TokenStore, oauthCfg *oauth2.Config) *DashboardHandler {
 	return &DashboardHandler{
 		configs:  configs,
 		users:    users,
 		tokens:   tokens,
-		oauthCfg: googlecalendar.NewOAuthConfig(),
+		oauthCfg: oauthCfg,
 	}
 }
 

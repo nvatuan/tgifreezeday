@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -96,7 +97,7 @@ func (s *ConfigStore) Get(id, userID int64) (*Config, error) {
 		&c.ID, &c.UserID, &c.Name, &c.SchemaVersion, &c.ConfigYAML,
 		&c.Status, &c.StatusMessage, &c.CreatedAt, &c.UpdatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

@@ -27,14 +27,14 @@ func main() {
 		}
 	}
 
+	secret := []byte(os.Getenv("SESSION_SECRET"))
+	// Set true when the server is behind HTTPS so cookies get Secure flag.
+	httpsOnly := os.Getenv("HTTPS_ONLY") == "true"
+
 	oauthCfg := googlecalendar.NewOAuthConfig()
 	if oauthCfg.ClientID == "" {
 		log.Fatal("OAuth config invalid")
 	}
-
-	secret := []byte(os.Getenv("SESSION_SECRET"))
-	// Set true when the server is behind HTTPS so cookies get Secure flag.
-	httpsOnly := os.Getenv("HTTPS_ONLY") == "true"
 
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
@@ -50,9 +50,9 @@ func main() {
 	tokens := db.NewTokenStore(database)
 	configs := db.NewConfigStore(database)
 
-	authH := handler.NewAuthHandler(users, tokens, secret, httpsOnly)
-	dashH := handler.NewDashboardHandler(configs, users, tokens)
-	cfgH := handler.NewConfigHandler(configs, tokens)
+	authH := handler.NewAuthHandler(users, tokens, secret, httpsOnly, oauthCfg)
+	dashH := handler.NewDashboardHandler(configs, users, tokens, oauthCfg)
+	cfgH := handler.NewConfigHandler(configs, tokens, oauthCfg)
 
 	requireAuth := func(h http.Handler) http.Handler {
 		return handler.RequireAuth(users, secret, h)

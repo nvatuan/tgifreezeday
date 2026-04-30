@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
+	"github.com/nvat/tgifreezeday/internal/logging"
 	"github.com/nvat/tgifreezeday/internal/session"
 )
 
@@ -23,6 +24,7 @@ func RequireAuth(users *db.UserStore, secret []byte, next http.Handler) http.Han
 		}
 		user, err := users.GetByID(userID)
 		if err != nil || user == nil {
+			logging.GetLogger().WithField("user_id", userID).Warn("session references unknown user, clearing")
 			session.Clear(w)
 			redirectTo(w, r, "/login")
 			return

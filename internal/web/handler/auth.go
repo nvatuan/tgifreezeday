@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
-	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	"github.com/nvat/tgifreezeday/internal/session"
 	"golang.org/x/oauth2"
 )
@@ -26,11 +26,11 @@ type AuthHandler struct {
 	secure   bool
 }
 
-func NewAuthHandler(users *db.UserStore, tokens *db.TokenStore, secret []byte, secure bool) *AuthHandler {
+func NewAuthHandler(users *db.UserStore, tokens *db.TokenStore, secret []byte, secure bool, oauthCfg *oauth2.Config) *AuthHandler {
 	return &AuthHandler{
 		users:    users,
 		tokens:   tokens,
-		oauthCfg: googlecalendar.NewOAuthConfig(),
+		oauthCfg: oauthCfg,
 		secret:   secret,
 		secure:   secure,
 	}
@@ -69,7 +69,13 @@ func (h *AuthHandler) HandleOAuthStart(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) HandleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	stateCookie, err := r.Cookie(oauthStateCookie)
-	if err != nil || stateCookie.Value != r.URL.Query().Get("state") {
+	if err != nil {
+		httpError(w, http.StatusBadRequest, "invalid OAuth state")
+		return
+	}
+	cookieState := stateCookie.Value
+	urlState := r.URL.Query().Get("state")
+	if subtle.ConstantTimeCompare([]byte(cookieState), []byte(urlState)) != 1 {
 		httpError(w, http.StatusBadRequest, "invalid OAuth state")
 		return
 	}
@@ -125,6 +131,7 @@ func fetchUserInfo(cfg *oauth2.Config, token *oauth2.Token) (*userInfo, error) {
 		return nil, err
 	}
 	defer resp.Body.Close() //nolint:errcheck
+	resp.Body = http.MaxBytesReader(nil, resp.Body, 64*1024)
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

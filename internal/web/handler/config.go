@@ -26,11 +26,11 @@ type ConfigHandler struct {
 	validateSem chan struct{}
 }
 
-func NewConfigHandler(configs *db.ConfigStore, tokens *db.TokenStore) *ConfigHandler {
+func NewConfigHandler(configs *db.ConfigStore, tokens *db.TokenStore, oauthCfg *oauth2.Config) *ConfigHandler {
 	return &ConfigHandler{
 		configs:     configs,
 		tokens:      tokens,
-		oauthCfg:    googlecalendar.NewOAuthConfig(),
+		oauthCfg:    oauthCfg,
 		validateSem: make(chan struct{}, 5),
 	}
 }
@@ -150,6 +150,11 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	name := r.FormValue("name")
 	yamlContent := r.FormValue("config_yaml")
+
+	if name == "" {
+		httpError(w, http.StatusBadRequest, "name is required")
+		return
+	}
 
 	if err := h.configs.Update(id, user.ID, name, yamlContent); err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to update config")
@@ -308,6 +313,7 @@ func (h *ConfigHandler) validateAndUpdateStatus(configID, userID int64, yamlCont
 	case h.validateSem <- struct{}{}:
 		defer func() { <-h.validateSem }()
 	default:
+		log.WithField("config_id", configID).Warn("validation semaphore full, skipping background validation")
 		return
 	}
 	status, msg := h.validateConfig(context.Background(), userID, yamlContent)
@@ -500,14 +506,14 @@ func calendarOptions(cals []*googlecalendar.CalendarItem) string {
 <script>
 function applyCalendarId(id) {
   if (!id) return;
-  var escaped = id.replace(/"/g, '\\"');
+  var safeId = JSON.stringify(id); // safely quoted, no injection
   var re = /(writeTo[\s\S]*?googleCalendar[\s\S]*?id:\s*)["']?[^\n"']*["']?/;
   if (window.cmEditor) {
-    var updated = window.cmEditor.getValue().replace(re, '$1"' + escaped + '"');
+    var updated = window.cmEditor.getValue().replace(re, '$1' + safeId);
     window.cmEditor.setValue(updated);
   } else {
     var ta = document.getElementById('config_yaml');
-    ta.value = ta.value.replace(re, '$1"' + escaped + '"');
+    ta.value = ta.value.replace(re, '$1' + safeId);
   }
   document.getElementById('cal-picker').value = '';
 }
@@ -696,8 +702,6 @@ writeTo:
 	if isEdit {
 		deleteBtn = `<button type="submit" name="_method" value="DELETE" class="outline contrast" onclick="return confirm('Delete this config?')">Delete</button>`
 	}
-
-	_ = schemaYAML
 
 	calPicker := calendarOptions(cals)
 
