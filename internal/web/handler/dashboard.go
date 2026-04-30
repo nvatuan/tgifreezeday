@@ -83,7 +83,7 @@ func dashboardPageHTML(displayName, email string, cfgs []*db.Config) string {
 </head>
 <body>
   <nav class="topnav">
-    <span class="brand">🛑 TGI Freeze Day</span>
+    <span class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</span>
     <div class="user-area">
       <span>%s</span>
       %s

@@ -49,7 +49,7 @@ func schemaRefHTML(version, yamlContent string) string {
 </head>
 <body>
 <nav class="topnav">
-  <a href="/dashboard" class="brand">🛑 TGI Freeze Day</a>
+  <a href="/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
 </nav>
 <div class="page-content">
   <div class="breadcrumb">Schema &rsaquo; %s</div>

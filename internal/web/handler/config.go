@@ -556,7 +556,7 @@ func configDetailHTML(cfg *db.Config) string {
 </head>
 <body>
 <nav class="topnav">
-  <a href="/dashboard" class="brand">🛑 TGI Freeze Day</a>
+  <a href="/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
   <div>%s</div>
 </nav>
 <div class="page-content">
@@ -734,7 +734,7 @@ writeTo:
 </head>
 <body>
 <nav class="topnav">
-  <a href="/dashboard" class="brand">🛑 TGI Freeze Day</a>
+  <a href="/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
   <div>%s</div>
 </nav>
 <div class="page-content">
