@@ -31,7 +31,12 @@ func NewRepository(
 	countryCode,
 	writeCalendarID string,
 ) (*Repository, error) {
-	service, err := calendar.NewService(ctx, option.WithCredentialsFile(credentialsPath))
+	httpClient, err := NewOAuthHTTPClient(ctx, credentialsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OAuth client: %w", err)
+	}
+
+	service, err := calendar.NewService(ctx, option.WithHTTPClient(httpClient))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create calendar service: %w", err)
 	}
