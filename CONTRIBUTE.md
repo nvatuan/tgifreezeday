@@ -40,13 +40,14 @@ The project follows Go best practices with clean architecture:
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
 2. Create an **OAuth 2.0 Client ID** with application type **Desktop app**
-3. Download the JSON and save it somewhere (e.g. `secrets/google.json`)
-4. Enable the **Google Calendar API** in your project
+3. Enable the **Google Calendar API** in your project
+4. Copy the Client ID and Client Secret from the credentials page
 
-Set `GOOGLE_APP_CLIENT_CRED_JSON_PATH` to the path of that JSON file:
+Set the following environment variables:
 
 ```bash
-export GOOGLE_APP_CLIENT_CRED_JSON_PATH=secrets/google.json
+export GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
 ```
 
 **First run:** a browser window opens for you to log in and grant calendar access. The resulting token is cached at `~/.config/tgifreezeday/token.json` (macOS: `~/Library/Application Support/tgifreezeday/token.json`). Subsequent runs use the cached token and refresh it automatically.

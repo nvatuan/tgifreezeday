@@ -187,13 +187,9 @@ func setupConfigAndRepo() (*config.Config, *googlecalendar.Repository) {
 		logger.WithError(err).Fatal("Config validation failed")
 	}
 
-	// Get Google credentials path
-	credPath := os.Getenv(config.GoogleAppClientCredJSONPathEnv)
-
 	// Create Google Calendar repository
 	ctx := context.Background()
 	repo, err := googlecalendar.NewRepository(ctx,
-		credPath,
 		cfg.ReadFrom.GoogleCalendar.CountryCode,
 		cfg.WriteTo.GoogleCalendar.ID,
 	)

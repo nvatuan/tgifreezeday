@@ -22,17 +22,21 @@ import (
 const tokenCacheSubPath = "tgifreezeday/token.json"
 
 // NewOAuthHTTPClient returns an HTTP client authorized as the user via OAuth2.
+// Reads GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET from the environment.
 // On first run it opens a browser for consent and caches the token locally.
 // Subsequent runs load the cached token and refresh it automatically.
-func NewOAuthHTTPClient(ctx context.Context, credentialsPath string) (*http.Client, error) {
-	b, err := os.ReadFile(credentialsPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read credentials file: %w", err)
+func NewOAuthHTTPClient(ctx context.Context) (*http.Client, error) {
+	clientID := os.Getenv("GOOGLE_OAUTH_CLIENT_ID")
+	clientSecret := os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+	if clientID == "" || clientSecret == "" {
+		return nil, fmt.Errorf("GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET must be set")
 	}
 
-	config, err := google.ConfigFromJSON(b, calendar.CalendarScope)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse OAuth credentials: %w", err)
+	config := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Scopes:       []string{calendar.CalendarScope},
+		Endpoint:     google.Endpoint,
 	}
 
 	cachePath, err := resolveTokenCachePath()

@@ -27,11 +27,10 @@ type Repository struct {
 // NewRepository creates a new Google Calendar repository for holiday calendar
 func NewRepository(
 	ctx context.Context,
-	credentialsPath,
 	countryCode,
 	writeCalendarID string,
 ) (*Repository, error) {
-	httpClient, err := NewOAuthHTTPClient(ctx, credentialsPath)
+	httpClient, err := NewOAuthHTTPClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OAuth client: %w", err)
 	}
