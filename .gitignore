@@ -10,3 +10,4 @@ coverage.html
 # Database files
 *.db*.db-shm
 *.db-wal
+tgifreezeday.db
