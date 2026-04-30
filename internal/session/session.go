@@ -14,13 +14,15 @@ import (
 const cookieName = "tgifreezeday_session"
 
 // SetUserID writes a signed session cookie containing the user ID.
-func SetUserID(w http.ResponseWriter, secret []byte, userID int64) {
+// secure should be true when the server is running behind HTTPS.
+func SetUserID(w http.ResponseWriter, secret []byte, userID int64, secure bool) {
 	val := sign(secret, strconv.FormatInt(userID, 10))
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    val,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
 	})

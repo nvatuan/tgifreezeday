@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
@@ -49,7 +50,7 @@ func dashboardPageHTML(displayName, email string, cfgs []*db.Config) string {
 					<a href="/configs/%d" role="button" class="outline" style="padding:0.2rem 0.6rem;font-size:0.8rem">View</a>
 					<a href="/configs/%d/edit" role="button" class="outline secondary" style="padding:0.2rem 0.6rem;font-size:0.8rem">Edit</a>
 				</td>
-			</tr>`, c.ID, c.Name, badge, c.SchemaVersion, c.ID, c.ID)
+			</tr>`, c.ID, html.EscapeString(c.Name), badge, html.EscapeString(c.SchemaVersion), c.ID, c.ID)
 		}
 	}
 
@@ -67,7 +68,7 @@ func dashboardPageHTML(displayName, email string, cfgs []*db.Config) string {
       <ul><li><strong>TGI Freeze Day</strong></li></ul>
       <ul>
         <li>%s</li>
-        <li><a href="/logout">Logout</a></li>
+        <li>%s</li>
       </ul>
     </nav>
     <hgroup>
@@ -81,7 +82,7 @@ func dashboardPageHTML(displayName, email string, cfgs []*db.Config) string {
     </table>
   </main>
 </body>
-</html>`, greeting, rows)
+</html>`, html.EscapeString(greeting), logoutForm, rows)
 }
 
 func statusBadge(status db.ConfigStatus) string {
@@ -91,5 +92,8 @@ func statusBadge(status db.ConfigStatus) string {
 		db.ConfigStatusUnauthorized: "orange",
 		db.ConfigStatusPending:      "gray",
 	}[status]
-	return fmt.Sprintf(`<span style="color:%s;font-weight:bold">%s</span>`, color, status)
+	return fmt.Sprintf(`<span style="color:%s;font-weight:bold">%s</span>`, color, html.EscapeString(string(status)))
 }
+
+// logoutForm is a small inline POST form used in every nav bar.
+const logoutForm = `<form method="POST" action="/logout" style="margin:0;display:inline"><button type="submit" class="outline" style="padding:0.2rem 0.8rem">Logout</button></form>`

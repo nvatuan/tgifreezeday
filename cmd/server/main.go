@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
@@ -14,7 +15,6 @@ import (
 func main() {
 	log := logging.GetLogger()
 
-	// Validate required env vars
 	required := []string{
 		"GOOGLE_OAUTH_CLIENT_ID",
 		"GOOGLE_OAUTH_CLIENT_SECRET",
@@ -27,15 +27,15 @@ func main() {
 		}
 	}
 
-	// Validate OAuth config is buildable
 	oauthCfg := googlecalendar.NewOAuthConfig()
 	if oauthCfg.ClientID == "" {
 		log.Fatal("OAuth config invalid")
 	}
 
 	secret := []byte(os.Getenv("SESSION_SECRET"))
+	// Set true when the server is behind HTTPS so cookies get Secure flag.
+	httpsOnly := os.Getenv("HTTPS_ONLY") == "true"
 
-	// Open database
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
 		dbPath = "./tgifreezeday.db"
@@ -46,24 +46,20 @@ func main() {
 	}
 	defer database.Close()
 
-	// Stores
 	users := db.NewUserStore(database)
 	tokens := db.NewTokenStore(database)
 	configs := db.NewConfigStore(database)
 
-	// Handlers
-	authH := handler.NewAuthHandler(users, tokens, secret)
+	authH := handler.NewAuthHandler(users, tokens, secret, httpsOnly)
 	dashH := handler.NewDashboardHandler(configs)
 	cfgH := handler.NewConfigHandler(configs, tokens)
 
-	// Auth middleware
 	requireAuth := func(h http.Handler) http.Handler {
 		return handler.RequireAuth(users, secret, h)
 	}
 
 	mux := http.NewServeMux()
 
-	// Public routes
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -76,7 +72,6 @@ func main() {
 	mux.HandleFunc("GET /oauth/callback", authH.HandleOAuthCallback)
 	mux.HandleFunc("POST /logout", authH.HandleLogout)
 
-	// Protected routes (wrapped with auth middleware)
 	mux.Handle("GET /dashboard", requireAuth(http.HandlerFunc(dashH.HandleDashboard)))
 
 	mux.Handle("GET /configs/new", requireAuth(http.HandlerFunc(cfgH.HandleNew)))
@@ -86,7 +81,6 @@ func main() {
 	mux.Handle("POST /configs/{id}", requireAuth(http.HandlerFunc(cfgH.HandleUpdate)))
 	mux.Handle("POST /configs/{id}/delete", requireAuth(http.HandlerFunc(cfgH.HandleDelete)))
 
-	// HTMX endpoints
 	mux.Handle("POST /configs/{id}/validate", requireAuth(http.HandlerFunc(cfgH.HandleValidate)))
 	mux.Handle("POST /configs/{id}/sync", requireAuth(http.HandlerFunc(cfgH.HandleSync)))
 	mux.Handle("POST /configs/{id}/wipe", requireAuth(http.HandlerFunc(cfgH.HandleWipe)))
@@ -98,9 +92,17 @@ func main() {
 	}
 
 	addr := ":" + port
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
 	log.WithField("addr", addr).Info("Starting server")
 	fmt.Printf("Server running at http://localhost%s\n", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.WithError(err).Fatal("server failed")
 	}
 }

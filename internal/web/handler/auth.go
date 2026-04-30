@@ -23,19 +23,20 @@ type AuthHandler struct {
 	tokens   *db.TokenStore
 	oauthCfg *oauth2.Config
 	secret   []byte
+	secure   bool // set true when serving over HTTPS
 }
 
-func NewAuthHandler(users *db.UserStore, tokens *db.TokenStore, secret []byte) *AuthHandler {
+func NewAuthHandler(users *db.UserStore, tokens *db.TokenStore, secret []byte, secure bool) *AuthHandler {
 	return &AuthHandler{
 		users:    users,
 		tokens:   tokens,
 		oauthCfg: googlecalendar.NewOAuthConfig(),
 		secret:   secret,
+		secure:   secure,
 	}
 }
 
 func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
-	// If already logged in, redirect to dashboard
 	if _, ok := session.GetUserID(r, h.secret); ok {
 		redirectTo(w, r, "/dashboard")
 		return
@@ -57,6 +58,7 @@ func (h *AuthHandler) HandleOAuthStart(w http.ResponseWriter, r *http.Request) {
 		Value:    state,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   h.secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int((5 * time.Minute).Seconds()),
 	})
@@ -66,13 +68,11 @@ func (h *AuthHandler) HandleOAuthStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) HandleOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	// Verify CSRF state
 	stateCookie, err := r.Cookie(oauthStateCookie)
 	if err != nil || stateCookie.Value != r.URL.Query().Get("state") {
 		httpError(w, http.StatusBadRequest, "invalid OAuth state")
 		return
 	}
-	// Clear state cookie
 	http.SetCookie(w, &http.Cookie{Name: oauthStateCookie, Value: "", MaxAge: -1, Path: "/"})
 
 	code := r.URL.Query().Get("code")
@@ -87,14 +87,12 @@ func (h *AuthHandler) HandleOAuthCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Fetch user info
 	info, err := fetchUserInfo(h.oauthCfg, token)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to fetch user info: "+err.Error())
 		return
 	}
 
-	// Upsert user and token
 	user, err := h.users.Upsert(info.ID, info.Email, info.Name)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to upsert user: "+err.Error())
@@ -105,7 +103,7 @@ func (h *AuthHandler) HandleOAuthCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	session.SetUserID(w, h.secret, user.ID)
+	session.SetUserID(w, h.secret, user.ID, h.secure)
 	redirectTo(w, r, "/dashboard")
 }
 

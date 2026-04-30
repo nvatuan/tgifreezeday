@@ -19,7 +19,7 @@ func (s *TokenStore) Upsert(userID int64, token *oauth2.Token) error {
 		ON CONFLICT(user_id) DO UPDATE SET
 			access_token  = excluded.access_token,
 			token_type    = excluded.token_type,
-			refresh_token = excluded.refresh_token,
+			refresh_token = CASE WHEN excluded.refresh_token != '' THEN excluded.refresh_token ELSE refresh_token END,
 			expiry        = excluded.expiry,
 			updated_at    = CURRENT_TIMESTAMP
 	`, userID, token.AccessToken, token.TokenType, token.RefreshToken, token.Expiry)

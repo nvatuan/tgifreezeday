@@ -30,25 +30,29 @@ func Open(path string) (*sql.DB, error) {
 }
 
 func migrate(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS users (
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS users (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			google_id    TEXT    UNIQUE NOT NULL,
 			email        TEXT    NOT NULL,
 			display_name TEXT    NOT NULL DEFAULT '',
 			created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-
-		CREATE TABLE IF NOT EXISTS oauth_tokens (
+		)`,
+		`CREATE TABLE IF NOT EXISTS oauth_tokens (
 			user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
 			access_token  TEXT    NOT NULL,
 			token_type    TEXT    NOT NULL DEFAULT '',
 			refresh_token TEXT    NOT NULL DEFAULT '',
 			expiry        DATETIME,
 			updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-
-		CREATE TABLE IF NOT EXISTS configs (
+		)`,
+		`CREATE TABLE IF NOT EXISTS configs (
 			id             INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			name           TEXT    NOT NULL,
@@ -58,7 +62,15 @@ func migrate(db *sql.DB) error {
 			status_message TEXT    NOT NULL DEFAULT '',
 			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-	`)
-	return err
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_configs_user_id ON configs(user_id)`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("migration statement failed: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }

@@ -4,31 +4,36 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
+	"github.com/nvat/tgifreezeday/internal/logging"
 	"golang.org/x/oauth2"
 	googleapi "google.golang.org/api/googleapi"
 )
 
+var log = logging.GetLogger()
+
 type ConfigHandler struct {
-	configs  *db.ConfigStore
-	tokens   *db.TokenStore
-	oauthCfg *oauth2.Config
+	configs     *db.ConfigStore
+	tokens      *db.TokenStore
+	oauthCfg    *oauth2.Config
+	validateSem chan struct{} // limits concurrent background validations
 }
 
 func NewConfigHandler(configs *db.ConfigStore, tokens *db.TokenStore) *ConfigHandler {
 	return &ConfigHandler{
-		configs:  configs,
-		tokens:   tokens,
-		oauthCfg: googlecalendar.NewOAuthConfig(),
+		configs:     configs,
+		tokens:      tokens,
+		oauthCfg:    googlecalendar.NewOAuthConfig(),
+		validateSem: make(chan struct{}, 5),
 	}
 }
 
-// idFromPath parses the {id} path value (Go 1.22+).
 func idFromPath(r *http.Request) (int64, bool) {
 	s := r.PathValue("id")
 	id, err := strconv.ParseInt(s, 10, 64)
@@ -39,7 +44,7 @@ func idFromPath(r *http.Request) (int64, bool) {
 func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 	schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configFormHTML("New Config", "", "", string(schemaYAML), "", false))
+	fmt.Fprint(w, configFormHTML("New Config", "/configs", "", "", string(schemaYAML), "", false))
 }
 
 // HandleCreate processes the config creation form.
@@ -54,7 +59,8 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	if name == "" {
 		schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
-		fmt.Fprint(w, configFormHTML("New Config", name, yamlContent, string(schemaYAML), "Name is required.", false))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, configFormHTML("New Config", "/configs", name, yamlContent, string(schemaYAML), "Name is required.", false))
 		return
 	}
 
@@ -64,7 +70,6 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate in background (update status)
 	go h.validateAndUpdateStatus(cfg.ID, user.ID, yamlContent)
 
 	redirectTo(w, r, fmt.Sprintf("/configs/%d", cfg.ID))
@@ -102,7 +107,8 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	schemaYAML, _ := appconfig.SchemaYAML(cfg.SchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configFormHTML("Edit Config", cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true))
+	action := fmt.Sprintf("/configs/%d", id)
+	fmt.Fprint(w, configFormHTML("Edit Config", action, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true))
 }
 
 // HandleUpdate processes the config edit form.
@@ -118,7 +124,6 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Support _method=DELETE for delete button in edit form
 	if r.FormValue("_method") == "DELETE" {
 		h.doDelete(w, r, id, user.ID)
 		return
@@ -170,8 +175,10 @@ func (h *ConfigHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, msg := h.validateConfig(user.ID, cfg.ConfigYAML)
-	_ = h.configs.UpdateStatus(id, status, msg)
+	status, msg := h.validateConfig(r.Context(), user.ID, cfg.ConfigYAML)
+	if err := h.configs.UpdateStatus(id, status, msg); err != nil {
+		log.WithError(err).Error("failed to update config status after validate")
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, statusBadgeHTML(status, msg))
@@ -258,7 +265,7 @@ func (h *ConfigHandler) parseAppConfig(yamlContent string) (*appconfig.Config, e
 	return cfg, nil
 }
 
-func (h *ConfigHandler) validateConfig(userID int64, yamlContent string) (db.ConfigStatus, string) {
+func (h *ConfigHandler) validateConfig(ctx context.Context, userID int64, yamlContent string) (db.ConfigStatus, string) {
 	appCfg, err := h.parseAppConfig(yamlContent)
 	if err != nil {
 		return db.ConfigStatusInvalid, err.Error()
@@ -269,7 +276,6 @@ func (h *ConfigHandler) validateConfig(userID int64, yamlContent string) (db.Con
 		return db.ConfigStatusInvalid, err.Error()
 	}
 
-	ctx := context.Background()
 	_, err = googlecalendar.NewRepositoryWithToken(ctx, h.oauthCfg, token,
 		appCfg.ReadFrom.GoogleCalendar.CountryCode,
 		appCfg.WriteTo.GoogleCalendar.ID,
@@ -286,8 +292,17 @@ func (h *ConfigHandler) validateConfig(userID int64, yamlContent string) (db.Con
 }
 
 func (h *ConfigHandler) validateAndUpdateStatus(configID, userID int64, yamlContent string) {
-	status, msg := h.validateConfig(userID, yamlContent)
-	_ = h.configs.UpdateStatus(configID, status, msg)
+	select {
+	case h.validateSem <- struct{}{}:
+		defer func() { <-h.validateSem }()
+	default:
+		return // semaphore full; skip — will retry on next explicit validate
+	}
+
+	status, msg := h.validateConfig(context.Background(), userID, yamlContent)
+	if err := h.configs.UpdateStatus(configID, status, msg); err != nil {
+		log.WithError(err).Error("failed to update config status after background validation")
+	}
 }
 
 func (h *ConfigHandler) buildRepo(ctx context.Context, userID int64, cfg *appconfig.Config) (*googlecalendar.Repository, error) {
@@ -312,9 +327,7 @@ func (h *ConfigHandler) runSync(ctx context.Context, userID int64, cfg *db.Confi
 		return err.Error(), true
 	}
 
-	lookback := appCfg.Shared.LookbackDays
-	lookahead := appCfg.Shared.LookaheadDays
-	rangeStart, rangeEnd := dateRange(lookback, lookahead)
+	rangeStart, rangeEnd := dateRange(appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
 
 	tgifMapping, err := repo.GetFreezeDaysInRange(rangeStart, rangeEnd)
 	if err != nil {
@@ -384,9 +397,9 @@ func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.
 	rows := ""
 	for _, b := range blockers {
 		rows += fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
-			b.Start.Format("2006-01-02 15:04"),
-			b.Summary,
-			b.ID,
+			html.EscapeString(b.Start.Format("2006-01-02 15:04")),
+			html.EscapeString(b.Summary),
+			html.EscapeString(b.ID),
 		)
 	}
 	return fmt.Sprintf(`
@@ -396,12 +409,12 @@ func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.
 </table>`, rows)
 }
 
-// --- HTML templates as strings ---
+// --- HTML fragments ---
 
 func statusBadgeHTML(status db.ConfigStatus, msg string) string {
 	badge := statusBadge(status)
 	if msg != "" {
-		return fmt.Sprintf(`%s <small style="color:var(--pico-muted-color)">%s</small>`, badge, msg)
+		return fmt.Sprintf(`%s <small style="color:var(--pico-muted-color)">%s</small>`, badge, html.EscapeString(msg))
 	}
 	return badge
 }
@@ -413,11 +426,15 @@ func actionResultHTML(action, msg string, isErr bool) string {
 	}
 	return fmt.Sprintf(`<div style="padding:0.5rem;border-left:3px solid %s;margin-top:0.5rem">
   <strong>%s result:</strong> %s
-</div>`, color, action, msg)
+</div>`, color, html.EscapeString(action), html.EscapeString(msg))
 }
 
 func configDetailHTML(cfg *db.Config) string {
 	badge := statusBadgeHTML(cfg.Status, cfg.StatusMessage)
+	escapedName := html.EscapeString(cfg.Name)
+	escapedSchema := html.EscapeString(cfg.SchemaVersion)
+	escapedYAML := html.EscapeString(cfg.ConfigYAML)
+
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -431,7 +448,7 @@ func configDetailHTML(cfg *db.Config) string {
 <main class="container">
   <nav>
     <ul><li><a href="/dashboard">&#8592; Dashboard</a></li></ul>
-    <ul><li><a href="/logout">Logout</a></li></ul>
+    <ul><li>%s</li></ul>
   </nav>
   <hgroup>
     <h2>%s</h2>
@@ -465,16 +482,17 @@ func configDetailHTML(cfg *db.Config) string {
 </main>
 </body>
 </html>`,
-		cfg.Name, cfg.Name, cfg.SchemaVersion, badge,
+		escapedName, logoutForm,
+		escapedName, escapedSchema, badge,
 		cfg.ID, cfg.ID, cfg.ID, cfg.ID, cfg.ID,
-		cfg.ConfigYAML,
+		escapedYAML,
 	)
 }
 
-func configFormHTML(title, name, yamlContent, schemaYAML, formErr string, isEdit bool) string {
+func configFormHTML(title, action, name, yamlContent, schemaYAML, formErr string, isEdit bool) string {
 	errHTML := ""
 	if formErr != "" {
-		errHTML = fmt.Sprintf(`<div style="color:red;padding:0.5rem;border-left:3px solid red">%s</div>`, formErr)
+		errHTML = fmt.Sprintf(`<div style="color:red;padding:0.5rem;border-left:3px solid red">%s</div>`, html.EscapeString(formErr))
 	}
 
 	placeholder := `shared:
@@ -501,7 +519,7 @@ writeTo:
 		deleteBtn = `<button type="submit" name="_method" value="DELETE" class="outline contrast" onclick="return confirm('Delete this config?')">Delete</button>`
 	}
 
-	_ = schemaYAML // schema shown as tooltip/details in future iterations
+	_ = schemaYAML // schema reference shown in future iterations
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -516,11 +534,11 @@ writeTo:
 <main class="container">
   <nav>
     <ul><li><a href="/dashboard">&#8592; Dashboard</a></li></ul>
-    <ul><li><a href="/logout">Logout</a></li></ul>
+    <ul><li>%s</li></ul>
   </nav>
   <h2>%s</h2>
   %s
-  <form method="POST">
+  <form method="POST" action="%s">
     <label for="name">Config Name
       <input type="text" id="name" name="name" value="%s" placeholder="My team freeze config" required>
     </label>
@@ -535,5 +553,15 @@ writeTo:
   </form>
 </main>
 </body>
-</html>`, title, title, errHTML, name, placeholder, yamlContent, deleteBtn)
+</html>`,
+		html.EscapeString(title),
+		logoutForm,
+		html.EscapeString(title),
+		errHTML,
+		html.EscapeString(action),
+		html.EscapeString(name),
+		placeholder,
+		html.EscapeString(yamlContent),
+		deleteBtn,
+	)
 }
