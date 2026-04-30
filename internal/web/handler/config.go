@@ -692,7 +692,7 @@ writeTo:
 
 	deleteBtn := ""
 	if isEdit {
-		deleteBtn = `<button type="submit" name="_method" value="DELETE" class="outline contrast" onclick="return confirm('Delete this config?')" style="margin:0">Delete</button>`
+		deleteBtn = `<button type="submit" name="_method" value="DELETE" class="outline contrast" onclick="return confirm('Delete this config?')">Delete</button>`
 	}
 
 	_ = schemaYAML
@@ -737,8 +737,8 @@ writeTo:
     .breadcrumb a:hover { text-decoration:underline; }
     .back-btn { font-size:1.4rem; text-decoration:none; color:var(--pico-muted-color); line-height:1; flex-shrink:0; }
     .back-btn:hover { color:var(--pico-color); }
-    .form-actions { display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; }
-    .form-actions button, .form-actions a[role=button] { margin:0; }
+    .form-actions { display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; }
+    .form-actions button, .form-actions a[role=button] { margin:0; width:auto; padding:0.45rem 1.1rem; font-size:0.9rem; }
     /* CodeMirror */
     .CodeMirror {
       height: 480px;
