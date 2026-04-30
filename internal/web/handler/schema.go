@@ -17,7 +17,7 @@ func HandleSchemaRef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, schemaRefHTML(version, string(schemaYAML)))
+	fmt.Fprint(w, schemaRefHTML(version, string(schemaYAML))) //nolint:errcheck
 }
 
 func schemaRefHTML(version, yamlContent string) string {

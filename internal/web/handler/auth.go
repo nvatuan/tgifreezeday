@@ -42,7 +42,7 @@ func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, loginPageHTML)
+	fmt.Fprint(w, loginPageHTML) //nolint:errcheck
 }
 
 func (h *AuthHandler) HandleOAuthStart(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +124,7 @@ func fetchUserInfo(cfg *oauth2.Config, token *oauth2.Token) (*userInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

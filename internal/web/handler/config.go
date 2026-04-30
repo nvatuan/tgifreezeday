@@ -60,12 +60,13 @@ func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 	cals := h.fetchCalendars(r.Context(), user.ID)
 	schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configFormHTML("New Config", "/configs", "/dashboard", appconfig.CurrentSchemaVersion, "", "", string(schemaYAML), "", false, cals))
+	fmt.Fprint(w, configFormHTML("New Config", "/configs", "/dashboard", appconfig.CurrentSchemaVersion, "", "", string(schemaYAML), "", false, cals)) //nolint:errcheck
 }
 
 // HandleCreate processes the config creation form.
 func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	if err := r.ParseForm(); err != nil {
 		httpError(w, http.StatusBadRequest, "invalid form")
 		return
@@ -77,7 +78,7 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		cals := h.fetchCalendars(r.Context(), user.ID)
 		schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, configFormHTML("New Config", "/configs", "/dashboard", appconfig.CurrentSchemaVersion, name, yamlContent, string(schemaYAML), "Name is required.", false, cals))
+		fmt.Fprint(w, configFormHTML("New Config", "/configs", "/dashboard", appconfig.CurrentSchemaVersion, name, yamlContent, string(schemaYAML), "Name is required.", false, cals)) //nolint:errcheck
 		return
 	}
 
@@ -105,7 +106,7 @@ func (h *ConfigHandler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configDetailHTML(cfg))
+	fmt.Fprint(w, configDetailHTML(cfg)) //nolint:errcheck
 }
 
 // HandleEdit renders the config edit form pre-populated.
@@ -126,7 +127,7 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	action := fmt.Sprintf("/configs/%d", id)
 	backURL := fmt.Sprintf("/configs/%d", id)
-	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, cfg.SchemaVersion, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cals))
+	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, cfg.SchemaVersion, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cals)) //nolint:errcheck
 }
 
 // HandleUpdate processes the config edit form.
@@ -137,6 +138,7 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid config id")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := r.ParseForm(); err != nil {
 		httpError(w, http.StatusBadRequest, "invalid form")
 		return
@@ -197,7 +199,7 @@ func (h *ConfigHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 		log.WithError(err).Error("failed to update config status after validate")
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, validateResultHTML(oldStatus, newStatus, msg))
+	fmt.Fprint(w, validateResultHTML(oldStatus, newStatus, msg)) //nolint:errcheck
 }
 
 // HandleSync runs sync and returns result HTML (HTMX).
@@ -215,7 +217,7 @@ func (h *ConfigHandler) HandleSync(w http.ResponseWriter, r *http.Request) {
 	}
 	msg, isErr := h.runSync(r.Context(), user.ID, cfg)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, actionResultHTML("Sync", msg, isErr))
+	fmt.Fprint(w, actionResultHTML("Sync", msg, isErr)) //nolint:errcheck
 }
 
 // HandleWipe wipes blockers and returns result HTML (HTMX).
@@ -233,7 +235,7 @@ func (h *ConfigHandler) HandleWipe(w http.ResponseWriter, r *http.Request) {
 	}
 	msg, isErr := h.runWipe(r.Context(), user.ID, cfg)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, actionResultHTML("Wipe", msg, isErr))
+	fmt.Fprint(w, actionResultHTML("Wipe", msg, isErr)) //nolint:errcheck
 }
 
 // HandleListBlockers returns a blockers table partial (HTMX).
@@ -249,9 +251,9 @@ func (h *ConfigHandler) HandleListBlockers(w http.ResponseWriter, r *http.Reques
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
-	html := h.listBlockers(r.Context(), user.ID, cfg)
+	partial := h.listBlockers(r.Context(), user.ID, cfg)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, html)
+	fmt.Fprint(w, partial) //nolint:errcheck,gosec
 }
 
 // --- internal helpers ---

@@ -58,7 +58,7 @@ func (s *ConfigStore) ListAllWithAuthor(filterUserID *int64) ([]*ConfigWithAutho
 	if err != nil {
 		return nil, fmt.Errorf("list all configs: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var out []*ConfigWithAuthor
 	for rows.Next() {
@@ -113,7 +113,7 @@ func (s *ConfigStore) ListByUser(userID int64) ([]*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list configs: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var configs []*Config
 	for rows.Next() {

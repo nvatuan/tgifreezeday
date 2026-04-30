@@ -56,7 +56,7 @@ func (s *UserStore) ListAll() ([]*User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var users []*User
 	for rows.Next() {
 		u := &User{}

@@ -44,7 +44,7 @@ func main() {
 	if err != nil {
 		log.WithError(err).Fatal("failed to open database")
 	}
-	defer database.Close()
+	defer database.Close() //nolint:errcheck
 
 	users := db.NewUserStore(database)
 	tokens := db.NewTokenStore(database)

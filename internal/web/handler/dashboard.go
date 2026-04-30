@@ -93,7 +93,7 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, dashboardPageHTML(greeting, rows, allUsers, filterMine, authorParam))
+	fmt.Fprint(w, dashboardPageHTML(greeting, rows, allUsers, filterMine, authorParam)) //nolint:errcheck
 }
 
 func trunc(s string, n int) string {
