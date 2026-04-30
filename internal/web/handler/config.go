@@ -530,6 +530,7 @@ func configDetailHTML(cfg *db.Config) string {
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧊</text></svg>">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
@@ -729,6 +730,7 @@ writeTo:
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧊</text></svg>">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
