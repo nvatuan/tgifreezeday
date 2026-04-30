@@ -51,7 +51,7 @@ func main() {
 	configs := db.NewConfigStore(database)
 
 	authH := handler.NewAuthHandler(users, tokens, secret, httpsOnly)
-	dashH := handler.NewDashboardHandler(configs, users)
+	dashH := handler.NewDashboardHandler(configs, users, tokens)
 	cfgH := handler.NewConfigHandler(configs, tokens)
 
 	requireAuth := func(h http.Handler) http.Handler {

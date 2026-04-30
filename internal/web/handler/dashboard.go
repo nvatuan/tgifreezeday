@@ -7,16 +7,25 @@ import (
 	"strconv"
 
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
+	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
+	"golang.org/x/oauth2"
 )
 
 type DashboardHandler struct {
-	configs *db.ConfigStore
-	users   *db.UserStore
+	configs  *db.ConfigStore
+	users    *db.UserStore
+	tokens   *db.TokenStore
+	oauthCfg *oauth2.Config
 }
 
-func NewDashboardHandler(configs *db.ConfigStore, users *db.UserStore) *DashboardHandler {
-	return &DashboardHandler{configs: configs, users: users}
+func NewDashboardHandler(configs *db.ConfigStore, users *db.UserStore, tokens *db.TokenStore) *DashboardHandler {
+	return &DashboardHandler{
+		configs:  configs,
+		users:    users,
+		tokens:   tokens,
+		oauthCfg: googlecalendar.NewOAuthConfig(),
+	}
 }
 
 func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +35,6 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 	var filterUserID *int64
 	filterMine := r.URL.Query().Get("filter") == "mine"
 	authorParam := r.URL.Query().Get("author")
-
 	if filterMine {
 		filterUserID = &currentUser.ID
 	} else if authorParam != "" {
@@ -43,7 +51,17 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 
 	allUsers, _ := h.users.ListAll()
 
-	// Enrich each config row with calendar ID extracted from YAML
+	// Fetch current user's calendar names in one API call for display
+	calNames := map[string]string{}
+	if token, err := h.tokens.Get(currentUser.ID); err == nil && token != nil {
+		if cals, err := googlecalendar.ListWritableCalendars(r.Context(), h.oauthCfg, token); err == nil {
+			for _, c := range cals {
+				calNames[c.ID] = c.Summary
+			}
+		}
+	}
+
+	// Build rows
 	rows := make([]dashRow, 0, len(cfgs))
 	for _, c := range cfgs {
 		author := c.AuthorDisplayName
@@ -54,13 +72,18 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 		if parsed, err := appconfig.LoadWithDefaultFromByteArray([]byte(c.ConfigYAML)); err == nil {
 			calID = parsed.WriteTo.GoogleCalendar.ID
 		}
+		calDisplay := calID
+		if name, ok := calNames[calID]; ok && name != "" {
+			calDisplay = name
+		}
 		rows = append(rows, dashRow{
-			ID:         c.ID,
-			Name:       c.Name,
-			Schema:     c.SchemaVersion,
-			Status:     c.Status,
-			Author:     author,
-			CalendarID: calID,
+			ID:           c.ID,
+			Name:         c.Name,
+			Schema:       c.SchemaVersion,
+			Status:       c.Status,
+			Author:       author,
+			CalendarID:   calID,
+			CalendarName: calDisplay,
 		})
 	}
 
@@ -70,7 +93,7 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, dashboardPageHTML(greeting, rows, allUsers, currentUser.ID, filterMine, authorParam))
+	fmt.Fprint(w, dashboardPageHTML(greeting, rows, allUsers, filterMine, authorParam))
 }
 
 func trunc(s string, n int) string {
@@ -82,23 +105,24 @@ func trunc(s string, n int) string {
 }
 
 type dashRow struct {
-	ID         int64
-	Name       string
-	Schema     string
-	Status     db.ConfigStatus
-	Author     string
-	CalendarID string
+	ID           int64
+	Name         string
+	Schema       string
+	Status       db.ConfigStatus
+	Author       string
+	CalendarID   string
+	CalendarName string
 }
 
-func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, currentUserID int64, filterMine bool, authorParam string) string {
+func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, filterMine bool, authorParam string) string {
 	// --- filter bar ---
-	allBtn := `<a href="/dashboard" role="button" class="outline">All</a>`
+	btnStyle := `style="padding:0.3rem 0.9rem;font-size:0.85rem;margin:0"`
+
+	allClass, mineClass := `class="outline"`, `class="outline"`
 	if !filterMine && authorParam == "" {
-		allBtn = `<a href="/dashboard" role="button">All</a>`
-	}
-	mineBtn := `<a href="/dashboard?filter=mine" role="button" class="outline">Mine</a>`
-	if filterMine {
-		mineBtn = `<a href="/dashboard" role="button">Mine</a>`
+		allClass = `class=""`
+	} else if filterMine {
+		mineClass = `class=""`
 	}
 
 	authorOpts := `<option value="">By author…</option>`
@@ -112,17 +136,19 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, cur
 			selected = " selected"
 		}
 		authorOpts += fmt.Sprintf(`<option value="%d"%s>%s</option>`,
-			u.ID, selected, html.EscapeString(trunc(label, 50)))
+			u.ID, selected, html.EscapeString(trunc(label, 40)))
 	}
+
 	filterBar := fmt.Sprintf(`
-<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1.5rem">
-  %s
-  %s
-  <select onchange="this.value?location.href='/dashboard?author='+this.value:location.href='/dashboard'" style="margin:0;width:auto;min-width:160px">
+<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1.25rem">
+  <a href="/dashboard" role="button" %s %s>All</a>
+  <a href="/dashboard?filter=mine" role="button" %s %s>Mine</a>
+  <select %s onchange="this.value?location.href='/dashboard?author='+this.value:location.href='/dashboard'"
+          style="margin:0;padding:0.3rem 0.5rem;font-size:0.85rem;width:auto;min-width:140px">
     %s
   </select>
-  <small style="color:var(--pico-muted-color);margin-left:0.25rem">%d config(s)</small>
-</div>`, allBtn, mineBtn, authorOpts, len(rows))
+  <small style="color:var(--pico-muted-color)">%d config(s)</small>
+</div>`, allClass, btnStyle, mineClass, btnStyle, btnStyle, authorOpts, len(rows))
 
 	// --- config cards ---
 	cards := ""
@@ -135,29 +161,31 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, cur
 	} else {
 		for _, r := range rows {
 			badge := statusBadge(r.Status)
-			meta := fmt.Sprintf(`schema: %s &nbsp;·&nbsp; by: %s &nbsp;·&nbsp; calendar: %s`,
+			calDisplay := r.CalendarName
+			if calDisplay == "" {
+				calDisplay = r.CalendarID
+			}
+			meta := fmt.Sprintf(`schema: <strong>%s</strong> &nbsp;·&nbsp; by: %s &nbsp;·&nbsp; 📅 %s`,
 				html.EscapeString(r.Schema),
-				html.EscapeString(trunc(r.Author, 50)),
-				html.EscapeString(trunc(r.CalendarID, 50)),
+				html.EscapeString(trunc(r.Author, 40)),
+				html.EscapeString(trunc(calDisplay, 50)),
 			)
 			cards += fmt.Sprintf(`
-			<article style="margin-bottom:0.75rem;padding:1rem 1.25rem">
-			  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
-			    <div style="min-width:0">
-			      <strong><a href="/configs/%d" style="text-decoration:none">%s</a></strong>
-			      <div style="margin-top:0.2rem;font-size:0.82rem;color:var(--pico-muted-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">%s</div>
-			    </div>
-			    <div style="display:flex;align-items:center;gap:0.6rem;flex-shrink:0">
-			      %s
-			      <a href="/configs/%d" role="button" class="outline" style="padding:0.25rem 0.7rem;font-size:0.82rem;margin:0">View</a>
-			      <a href="/configs/%d/edit" role="button" class="outline secondary" style="padding:0.25rem 0.7rem;font-size:0.82rem;margin:0">Edit</a>
-			    </div>
-			  </div>
-			</article>`,
+<article style="margin-bottom:0.6rem;padding:0.9rem 1.2rem">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem">
+    <strong style="font-size:1rem"><a href="/configs/%d" style="text-decoration:none">%s</a></strong>
+    <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
+      %s
+      <a href="/configs/%d" role="button" class="outline" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">View</a>
+      <a href="/configs/%d/edit" role="button" class="outline secondary" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">Edit</a>
+    </div>
+  </div>
+  <div style="margin-top:0.3rem;font-size:0.82rem;color:var(--pico-muted-color)">%s</div>
+</article>`,
 				r.ID, html.EscapeString(trunc(r.Name, 50)),
-				meta,
 				badge,
-				r.ID, r.ID)
+				r.ID, r.ID,
+				meta)
 		}
 	}
 
