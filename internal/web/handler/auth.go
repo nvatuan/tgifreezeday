@@ -110,7 +110,7 @@ func (h *AuthHandler) HandleOAuthCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	session.SetUserID(w, h.secret, user.ID, h.secure)
-	redirectTo(w, r, "/dashboard")
+	redirectTo(w, r, "/dashboard?welcome=1")
 }
 
 func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {

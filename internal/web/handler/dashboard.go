@@ -9,6 +9,7 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
+	"github.com/nvat/tgifreezeday/internal/perm"
 	"golang.org/x/oauth2"
 )
 
@@ -78,6 +79,7 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 		}
 		rows = append(rows, dashRow{
 			ID:           c.ID,
+			UserID:       c.UserID,
 			Name:         c.Name,
 			Schema:       c.SchemaVersion,
 			Status:       c.Status,
@@ -92,8 +94,11 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 		greeting = currentUser.Email
 	}
 
+	role := roleFromContext(r.Context())
+	welcome := r.URL.Query().Get("welcome") == "1"
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, dashboardPageHTML(greeting, rows, allUsers, filterMine, authorParam)) //nolint:errcheck
+	fmt.Fprint(w, dashboardPageHTML(greeting, rows, allUsers, filterMine, authorParam, role, currentUser.ID, welcome)) //nolint:errcheck
 }
 
 func trunc(s string, n int) string {
@@ -106,6 +111,7 @@ func trunc(s string, n int) string {
 
 type dashRow struct {
 	ID           int64
+	UserID       int64
 	Name         string
 	Schema       string
 	Status       db.ConfigStatus
@@ -114,7 +120,7 @@ type dashRow struct {
 	CalendarName string
 }
 
-func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, filterMine bool, authorParam string) string {
+func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, filterMine bool, authorParam string, role perm.Role, currentUserID int64, welcome bool) string {
 	// --- filter bar ---
 	btnStyle := `style="padding:0.3rem 0.9rem;font-size:0.85rem;margin:0"`
 
@@ -152,14 +158,41 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
   %d config(s)
 </div>`, allClass, btnStyle, mineClass, btnStyle, authorOpts, len(rows))
 
+	// --- welcome banner ---
+	welcomeBanner := ""
+	if welcome {
+		roleColor := map[perm.Role]string{
+			perm.RolePower:    "#1a4731",
+			perm.RoleWrite:    "#1e3a5f",
+			perm.RoleReadOnly: "#3b2f1e",
+		}[role]
+		roleBorder := map[perm.Role]string{
+			perm.RolePower:    "#166534",
+			perm.RoleWrite:    "#1d4ed8",
+			perm.RoleReadOnly: "#92400e",
+		}[role]
+		welcomeBanner = fmt.Sprintf(`
+<div id="welcome-banner" style="background:%s;border:1px solid %s;border-radius:0.5rem;padding:0.75rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
+  <span>👋 Welcome! You are logged in as <strong>%s</strong> — %s</span>
+  <button onclick="document.getElementById('welcome-banner').remove()" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--pico-muted-color);flex-shrink:0;padding:0">×</button>
+</div>`,
+			roleColor, roleBorder,
+			html.EscapeString(role.DisplayName()),
+			html.EscapeString(role.WelcomeMessage()))
+	}
+
 	// --- config cards ---
 	cards := ""
 	if len(rows) == 0 {
-		cards = `<div style="text-align:center;padding:3rem;color:var(--pico-muted-color)">
+		createLink := ""
+		if role.CanCreate() {
+			createLink = `<a href="/configs/new" role="button">Create your first config</a>`
+		}
+		cards = fmt.Sprintf(`<div style="text-align:center;padding:3rem;color:var(--pico-muted-color)">
 		  <p style="font-size:2rem;margin-bottom:0.5rem">📭</p>
 		  <p>No configs found.</p>
-		  <a href="/configs/new" role="button">Create your first config</a>
-		</div>`
+		  %s
+		</div>`, createLink)
 	} else {
 		for _, r := range rows {
 			badge := statusBadge(r.Status)
@@ -172,6 +205,10 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
 				html.EscapeString(trunc(r.Author, 40)),
 				html.EscapeString(trunc(calDisplay, 50)),
 			)
+			editBtn := ""
+			if role.CanEditConfig(r.UserID, currentUserID) {
+				editBtn = fmt.Sprintf(`<a href="/configs/%d/edit" role="button" class="outline secondary" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">Edit</a>`, r.ID)
+			}
 			cards += fmt.Sprintf(`
 <article style="margin-bottom:0.6rem;padding:0.9rem 1.2rem">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem">
@@ -179,14 +216,15 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
     <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
       %s
       <a href="/configs/%d" role="button" class="outline" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">View</a>
-      <a href="/configs/%d/edit" role="button" class="outline secondary" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">Edit</a>
+      %s
     </div>
   </div>
   <div style="margin-top:0.3rem;font-size:0.82rem;color:var(--pico-muted-color)">%s</div>
 </article>`,
 				r.ID, html.EscapeString(trunc(r.Name, 50)),
 				badge,
-				r.ID, r.ID,
+				r.ID,
+				editBtn,
 				meta)
 		}
 	}
@@ -212,19 +250,32 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
     <a href="/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
     <div class="user-area">
       <span>%s</span>
+      <span style="font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:999px;background:%s;color:%s;border:1px solid %s">%s</span>
       %s
     </div>
   </nav>
   <div class="page-content">
+    %s
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
       <h2 style="margin:0">Configs</h2>
-      <a href="/configs/new" role="button" style="margin:0">+ New Config</a>
+      %s
     </div>
     %s
     %s
   </div>
 </body>
-</html>`, html.EscapeString(greeting), logoutForm, filterBar, cards)
+</html>`,
+		html.EscapeString(greeting),
+		roleBadgeBg(role), roleBadgeFg(role), roleBadgeBorder(role), html.EscapeString(role.DisplayName()),
+		logoutForm,
+		welcomeBanner,
+		func() string {
+			if role.CanCreate() {
+				return `<a href="/configs/new" role="button" style="margin:0">+ New Config</a>`
+			}
+			return ""
+		}(),
+		filterBar, cards)
 }
 
 func statusBadge(status db.ConfigStatus) string {
@@ -237,6 +288,18 @@ func statusBadge(status db.ConfigStatus) string {
 	return fmt.Sprintf(`<span style="padding:0.2rem 0.6rem;border-radius:999px;font-size:0.78rem;font-weight:600;%s">%s</span>`,
 		style, html.EscapeString(string(status)))
 }
+
+type roleColors struct{ bg, fg, border string }
+
+var roleColorMap = map[perm.Role]roleColors{
+	perm.RolePower:    {bg: "#1a4731", fg: "#4ade80", border: "#166534"},
+	perm.RoleWrite:    {bg: "#1e3a5f", fg: "#60a5fa", border: "#1d4ed8"},
+	perm.RoleReadOnly: {bg: "#1f2937", fg: "#9ca3af", border: "#374151"},
+}
+
+func roleBadgeBg(role perm.Role) string     { return roleColorMap[role].bg }
+func roleBadgeFg(role perm.Role) string     { return roleColorMap[role].fg }
+func roleBadgeBorder(role perm.Role) string { return roleColorMap[role].border }
 
 // logoutForm is a small inline POST form used in every nav bar.
 const logoutForm = `<form method="POST" action="/logout" style="margin:0;display:inline"><button type="submit" class="outline" style="padding:0.25rem 0.75rem;font-size:0.85rem;margin:0">Logout</button></form>`

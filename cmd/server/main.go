@@ -9,6 +9,7 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	"github.com/nvat/tgifreezeday/internal/logging"
+	"github.com/nvat/tgifreezeday/internal/perm"
 	"github.com/nvat/tgifreezeday/internal/web/handler"
 )
 
@@ -50,12 +51,17 @@ func main() {
 	tokens := db.NewTokenStore(database)
 	configs := db.NewConfigStore(database)
 
+	resolver := perm.New(
+		os.Getenv("POWER_USER_EMAIL_LIST"),
+		os.Getenv("WRITE_USER_EMAIL_LIST"),
+	)
+
 	authH := handler.NewAuthHandler(users, tokens, secret, httpsOnly, oauthCfg)
 	dashH := handler.NewDashboardHandler(configs, users, tokens, oauthCfg)
 	cfgH := handler.NewConfigHandler(configs, tokens, oauthCfg)
 
 	requireAuth := func(h http.Handler) http.Handler {
-		return handler.RequireAuth(users, secret, h)
+		return handler.RequireAuth(users, secret, resolver, h)
 	}
 
 	mux := http.NewServeMux()

@@ -13,6 +13,7 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
 	"github.com/nvat/tgifreezeday/internal/logging"
+	"github.com/nvat/tgifreezeday/internal/perm"
 	"golang.org/x/oauth2"
 	googleapi "google.golang.org/api/googleapi"
 )
@@ -56,6 +57,10 @@ func (h *ConfigHandler) fetchCalendars(ctx context.Context, userID int64) []*goo
 
 // HandleNew renders the config creation form.
 func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
+	if role := roleFromContext(r.Context()); !role.CanCreate() {
+		httpError(w, http.StatusForbidden, "you do not have permission to create configs")
+		return
+	}
 	user := userFromContext(r.Context())
 	cals := h.fetchCalendars(r.Context(), user.ID)
 	schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
@@ -65,6 +70,10 @@ func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreate processes the config creation form.
 func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
+	if role := roleFromContext(r.Context()); !role.CanCreate() {
+		httpError(w, http.StatusForbidden, "you do not have permission to create configs")
+		return
+	}
 	user := userFromContext(r.Context())
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	if err := r.ParseForm(); err != nil {
@@ -105,8 +114,9 @@ func (h *ConfigHandler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
+	role := roleFromContext(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configDetailHTML(cfg)) //nolint:errcheck
+	fmt.Fprint(w, configDetailHTML(cfg, user.ID, role)) //nolint:errcheck
 }
 
 // HandleEdit renders the config edit form pre-populated.
@@ -120,6 +130,10 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.configs.Get(id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
+		return
+	}
+	if role := roleFromContext(r.Context()); !role.CanEditConfig(cfg.UserID, user.ID) {
+		httpError(w, http.StatusForbidden, "you do not have permission to edit this config")
 		return
 	}
 	cals := h.fetchCalendars(r.Context(), user.ID)
@@ -156,6 +170,16 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cfg, err := h.configs.Get(id, user.ID)
+	if err != nil || cfg == nil {
+		httpError(w, http.StatusNotFound, "config not found")
+		return
+	}
+	if role := roleFromContext(r.Context()); !role.CanEditConfig(cfg.UserID, user.ID) {
+		httpError(w, http.StatusForbidden, "you do not have permission to edit this config")
+		return
+	}
+
 	if err := h.configs.Update(id, user.ID, name, yamlContent); err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to update config")
 		return
@@ -176,6 +200,15 @@ func (h *ConfigHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ConfigHandler) doDelete(w http.ResponseWriter, r *http.Request, id, userID int64) {
+	cfg, err := h.configs.Get(id, userID)
+	if err != nil || cfg == nil {
+		httpError(w, http.StatusNotFound, "config not found")
+		return
+	}
+	if role := roleFromContext(r.Context()); !role.CanEditConfig(cfg.UserID, userID) {
+		httpError(w, http.StatusForbidden, "you do not have permission to delete this config")
+		return
+	}
 	if err := h.configs.Delete(id, userID); err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to delete config")
 		return
@@ -196,6 +229,10 @@ func (h *ConfigHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.configs.Get(id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
+		return
+	}
+	if role := roleFromContext(r.Context()); !role.CanSyncConfig(cfg.UserID, user.ID) {
+		httpError(w, http.StatusForbidden, "you do not have permission to validate this config")
 		return
 	}
 	oldStatus := cfg.Status
@@ -220,6 +257,10 @@ func (h *ConfigHandler) HandleSync(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
 	}
+	if role := roleFromContext(r.Context()); !role.CanSyncConfig(cfg.UserID, user.ID) {
+		httpError(w, http.StatusForbidden, "you do not have permission to sync this config")
+		return
+	}
 	msg, isErr := h.runSync(r.Context(), user.ID, cfg)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, actionResultHTML("Sync", msg, isErr)) //nolint:errcheck
@@ -236,6 +277,10 @@ func (h *ConfigHandler) HandleWipe(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.configs.Get(id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
+		return
+	}
+	if role := roleFromContext(r.Context()); !role.CanSyncConfig(cfg.UserID, user.ID) {
+		httpError(w, http.StatusForbidden, "you do not have permission to wipe this config")
 		return
 	}
 	msg, isErr := h.runWipe(r.Context(), user.ID, cfg)
@@ -520,11 +565,49 @@ function applyCalendarId(id) {
 </script>`, opts)
 }
 
-func configDetailHTML(cfg *db.Config) string {
+func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) string {
 	badge := statusBadgeHTML(cfg.Status, cfg.StatusMessage)
 	escapedName := html.EscapeString(cfg.Name)
 	escapedSchema := html.EscapeString(cfg.SchemaVersion)
 	escapedYAML := html.EscapeString(cfg.ConfigYAML)
+	canSync := role.CanSyncConfig(cfg.UserID, currentUserID)
+	canEdit := role.CanEditConfig(cfg.UserID, currentUserID)
+
+	editBtnHTML := ""
+	if canEdit {
+		editBtnHTML = fmt.Sprintf(`<a href="/configs/%d/edit" role="button" class="outline" style="margin:0;padding:0.4rem 1rem;font-size:0.88rem">&#9998; Edit</a>`, cfg.ID)
+	}
+
+	syncActionsHTML := ""
+	if canSync {
+		syncActionsHTML = fmt.Sprintf(`
+    <button
+      hx-post="/configs/%d/validate"
+      hx-target="#action-result"
+      hx-swap="innerHTML"
+      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>🔍 Validating&#8230;</p>';document.getElementById('status-badge').innerHTML='<em class=ack>checking&#8230;</em>'"
+      class="outline"
+      title="Re-check the config YAML and verify calendar write access">
+      🔍 Validate
+    </button>
+    <button
+      hx-post="/configs/%d/sync"
+      hx-target="#action-result"
+      hx-swap="innerHTML"
+      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Syncing — reading holidays and writing blockers&#8230;</p>'"
+      title="Read public holidays, calculate freeze days, and create blocker events on your calendar">
+      ▶ Sync
+    </button>
+    <button
+      hx-post="/configs/%d/wipe"
+      hx-target="#action-result"
+      hx-swap="innerHTML"
+      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Wiping blockers&#8230;</p>'"
+      class="outline"
+      title="Remove all managed blocker events in the lookback/lookahead date range">
+      🗑 Wipe Blockers
+    </button>`, cfg.ID, cfg.ID, cfg.ID)
+	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -595,39 +678,14 @@ func configDetailHTML(cfg *db.Config) string {
       <a href="/dashboard" class="back-btn" title="Back to Configs">&#8592;</a>
       <h2 style="margin:0">%s</h2>
     </div>
-    <a href="/configs/%d/edit" role="button" class="outline" style="margin:0;padding:0.4rem 1rem;font-size:0.88rem">&#9998; Edit</a>
+    %s
   </div>
   <div style="font-size:0.85rem;color:var(--pico-muted-color);margin-bottom:1.5rem">
     schema: %s &nbsp;·&nbsp; Status: <span id="status-badge">%s</span>
   </div>
 
   <div class="action-bar">
-    <button
-      hx-post="/configs/%d/validate"
-      hx-target="#action-result"
-      hx-swap="innerHTML"
-      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>🔍 Validating&#8230;</p>';document.getElementById('status-badge').innerHTML='<em class=ack>checking&#8230;</em>'"
-      class="outline"
-      title="Re-check the config YAML and verify calendar write access">
-      🔍 Validate
-    </button>
-    <button
-      hx-post="/configs/%d/sync"
-      hx-target="#action-result"
-      hx-swap="innerHTML"
-      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Syncing — reading holidays and writing blockers&#8230;</p>'"
-      title="Read public holidays, calculate freeze days, and create blocker events on your calendar">
-      ▶ Sync
-    </button>
-    <button
-      hx-post="/configs/%d/wipe"
-      hx-target="#action-result"
-      hx-swap="innerHTML"
-      hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Wiping blockers&#8230;</p>'"
-      class="outline"
-      title="Remove all managed blocker events in the lookback/lookahead date range">
-      🗑 Wipe Blockers
-    </button>
+    %s
     <button
       hx-get="/configs/%d/blockers"
       hx-target="#blockers-panel"
@@ -654,10 +712,9 @@ func configDetailHTML(cfg *db.Config) string {
 </html>`,
 		escapedName, logoutForm,
 		escapedName,
-		escapedName,
-		cfg.ID,
+		escapedName, editBtnHTML,
 		escapedSchema, badge,
-		cfg.ID, cfg.ID, cfg.ID, cfg.ID,
+		syncActionsHTML, cfg.ID,
 		escapedYAML,
 	)
 }
