@@ -6,15 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 
 	"github.com/nvat/tgifreezeday/internal/domain"
 	"github.com/nvat/tgifreezeday/internal/helpers"
-	"github.com/nvat/tgifreezeday/internal/logging"
 )
-
-var logger = logging.GetLogger()
 
 // Repository implements the CalendarRepository interface for Google Calendar
 type Repository struct {
@@ -24,16 +22,15 @@ type Repository struct {
 	calendarTZ      *time.Location
 }
 
-// NewRepository creates a new Google Calendar repository for holiday calendar
-func NewRepository(
+// NewRepositoryWithToken creates a Google Calendar repository using a stored OAuth token.
+func NewRepositoryWithToken(
 	ctx context.Context,
+	oauthCfg *oauth2.Config,
+	token *oauth2.Token,
 	countryCode,
 	writeCalendarID string,
 ) (*Repository, error) {
-	httpClient, err := NewOAuthHTTPClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OAuth client: %w", err)
-	}
+	httpClient := NewHTTPClientFromToken(ctx, oauthCfg, token)
 
 	service, err := calendar.NewService(ctx, option.WithHTTPClient(httpClient))
 	if err != nil {
@@ -45,7 +42,6 @@ func NewRepository(
 		return nil, fmt.Errorf("failed to get holiday calendar ID: %w", err)
 	}
 
-	// Get calendar timezone
 	cal, err := service.Calendars.Get(writeCalendarID).Do()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get calendar info: %w", err)
@@ -143,27 +139,29 @@ func (r *Repository) WipeAllBlockersInRange(startDate, endDate time.Time) error 
 
 // fetchBlockerEvents retrieves all blocker events from the write calendar within the specified date range
 func (r *Repository) fetchBlockerEvents(startDate, endDate time.Time) ([]*calendar.Event, error) {
-	// Fetch events from the write calendar within the date range
 	call := r.service.Events.List(r.writeCalendarID).
 		TimeMin(startDate.Format(time.RFC3339)).
 		TimeMax(endDate.Format(time.RFC3339)).
 		SingleEvents(true).
 		OrderBy("startTime")
 
-	events, err := call.Do()
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve events from write calendar: %w", err)
-	}
-
-	// Filter for blocker events only
-	var blockerEvents []*calendar.Event
-	for _, event := range events.Items {
-		if event.Description != "" && strings.Contains(event.Description, defaultBlockerDescription) {
-			blockerEvents = append(blockerEvents, event)
+	var all []*calendar.Event
+	for {
+		events, err := call.Do()
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve events from write calendar: %w", err)
 		}
+		for _, event := range events.Items {
+			if event.Description != "" && strings.Contains(event.Description, defaultBlockerDescription) {
+				all = append(all, event)
+			}
+		}
+		if events.NextPageToken == "" {
+			break
+		}
+		call = call.PageToken(events.NextPageToken)
 	}
-
-	return blockerEvents, nil
+	return all, nil
 }
 
 // BlockerEvent represents a blocker event for display purposes
@@ -215,14 +213,6 @@ func (r *Repository) ListAllBlockersInRange(startDate, endDate time.Time) ([]*Bl
 				}
 			}
 		}
-
-		// Debug logging - print full API response for this event
-		logger.WithFields(map[string]interface{}{
-			"event_id":          event.Id,
-			"event_summary":     event.Summary,
-			"event_description": event.Description,
-			"full_api_response": event,
-		}).Debug("Found blocker event - full API response")
 
 		blockers = append(blockers, blocker)
 	}
@@ -277,12 +267,19 @@ func (r *Repository) fetchEvents(timeMin, timeMax time.Time) ([]*calendar.Event,
 		SingleEvents(true).
 		OrderBy("startTime")
 
-	events, err := call.Do()
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve events from Google Calendar: %w", err)
+	var all []*calendar.Event
+	for {
+		events, err := call.Do()
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve events from Google Calendar: %w", err)
+		}
+		all = append(all, events.Items...)
+		if events.NextPageToken == "" {
+			break
+		}
+		call = call.PageToken(events.NextPageToken)
 	}
-
-	return events.Items, nil
+	return all, nil
 }
 
 // extractEventDate extracts the date from a Google Calendar event

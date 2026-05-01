@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"slices"
 
 	"github.com/nvat/tgifreezeday/internal/consts"
@@ -36,14 +35,6 @@ var supportedChecks = []string{
 }
 
 func (c *Config) Validate() error {
-	// Validate OAuth credentials
-	if os.Getenv(GoogleOAuthClientIDEnv) == "" {
-		return fmt.Errorf("environment variable %s is required", GoogleOAuthClientIDEnv)
-	}
-	if os.Getenv(GoogleOAuthClientSecretEnv) == "" {
-		return fmt.Errorf("environment variable %s is required", GoogleOAuthClientSecretEnv)
-	}
-
 	// Validate Shared block
 	if err := c.ValidateSharedLookbackAndLookaheadDays(); err != nil {
 		return fmt.Errorf("invalid shared.lookbackDays or lookaheadDays: %w", err)
