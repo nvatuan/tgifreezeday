@@ -17,20 +17,20 @@ const (
 	roleCtxKey contextKey = "role"
 )
 
-// RequireAuth redirects to /login if the user is not authenticated.
+// RequireAuth redirects to loginPath if the user is not authenticated.
 // On success, stores the *db.User and perm.Role in the request context.
-func RequireAuth(users *db.UserStore, secret []byte, resolver *perm.Resolver, next http.Handler) http.Handler {
+func RequireAuth(users *db.UserStore, secret []byte, resolver *perm.Resolver, loginPath string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := session.GetUserID(r, secret)
 		if !ok {
-			redirectTo(w, r, "/login")
+			redirectTo(w, r, loginPath)
 			return
 		}
 		user, err := users.GetByID(userID)
 		if err != nil || user == nil {
 			logging.GetLogger().WithField("user_id", userID).Warn("session references unknown user, clearing")
 			session.Clear(w)
-			redirectTo(w, r, "/login")
+			redirectTo(w, r, loginPath)
 			return
 		}
 		role := resolver.RoleFor(user.Email)

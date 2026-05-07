@@ -25,25 +25,27 @@ type AuthHandler struct {
 	oauthCfg *oauth2.Config
 	secret   []byte
 	secure   bool
+	basePath string
 }
 
-func NewAuthHandler(users *db.UserStore, tokens *db.TokenStore, secret []byte, secure bool, oauthCfg *oauth2.Config) *AuthHandler {
+func NewAuthHandler(users *db.UserStore, tokens *db.TokenStore, secret []byte, secure bool, oauthCfg *oauth2.Config, basePath string) *AuthHandler {
 	return &AuthHandler{
 		users:    users,
 		tokens:   tokens,
 		oauthCfg: oauthCfg,
 		secret:   secret,
 		secure:   secure,
+		basePath: basePath,
 	}
 }
 
 func (h *AuthHandler) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 	if _, ok := session.GetUserID(r, h.secret); ok {
-		redirectTo(w, r, "/dashboard")
+		redirectTo(w, r, h.basePath+"/dashboard")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, loginPageHTML) //nolint:errcheck
+	fmt.Fprint(w, loginPageHTML(h.basePath)) //nolint:errcheck
 }
 
 func (h *AuthHandler) HandleOAuthStart(w http.ResponseWriter, r *http.Request) {
@@ -115,12 +117,12 @@ func (h *AuthHandler) HandleOAuthCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	session.SetUserID(w, h.secret, user.ID, h.secure)
-	redirectTo(w, r, "/dashboard?welcome=1")
+	redirectTo(w, r, h.basePath+"/dashboard?welcome=1")
 }
 
 func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	session.Clear(w)
-	redirectTo(w, r, "/login")
+	redirectTo(w, r, h.basePath+"/login")
 }
 
 type userInfo struct {
@@ -151,7 +153,8 @@ func fetchUserInfo(cfg *oauth2.Config, token *oauth2.Token) (*userInfo, error) {
 	return &info, nil
 }
 
-const loginPageHTML = `<!DOCTYPE html>
+func loginPageHTML(basePath string) string {
+	return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
@@ -208,7 +211,7 @@ const loginPageHTML = `<!DOCTYPE html>
       <div class="icon">🙏🧔🏽‍♀️🧊🗓️️</div>
       <h1>TGI Freeze Day</h1>
       <p>Manage production freeze day blockers<br>on your team calendar.</p>
-      <a href="/oauth/start" class="google-btn">
+      <a href="` + basePath + `/oauth/start" class="google-btn">
         <svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
           <path fill="#fff" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
           <path fill="#fff" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
@@ -221,3 +224,4 @@ const loginPageHTML = `<!DOCTYPE html>
   </div>
 </body>
 </html>`
+}

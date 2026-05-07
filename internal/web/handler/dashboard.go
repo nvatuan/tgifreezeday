@@ -18,14 +18,16 @@ type DashboardHandler struct {
 	users    *db.UserStore
 	tokens   *db.TokenStore
 	oauthCfg *oauth2.Config
+	basePath string
 }
 
-func NewDashboardHandler(configs *db.ConfigStore, users *db.UserStore, tokens *db.TokenStore, oauthCfg *oauth2.Config) *DashboardHandler {
+func NewDashboardHandler(configs *db.ConfigStore, users *db.UserStore, tokens *db.TokenStore, oauthCfg *oauth2.Config, basePath string) *DashboardHandler {
 	return &DashboardHandler{
 		configs:  configs,
 		users:    users,
 		tokens:   tokens,
 		oauthCfg: oauthCfg,
+		basePath: basePath,
 	}
 }
 
@@ -98,7 +100,7 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 	welcome := r.URL.Query().Get("welcome") == "1"
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, dashboardPageHTML(greeting, rows, allUsers, filterMine, authorParam, role, currentUser.ID, welcome)) //nolint:errcheck
+	fmt.Fprint(w, dashboardPageHTML(h.basePath, greeting, rows, allUsers, filterMine, authorParam, role, currentUser.ID, welcome)) //nolint:errcheck
 }
 
 func trunc(s string, n int) string {
@@ -120,7 +122,7 @@ type dashRow struct {
 	CalendarName string
 }
 
-func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, filterMine bool, authorParam string, role perm.Role, currentUserID int64, welcome bool) string {
+func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUsers []*db.User, filterMine bool, authorParam string, role perm.Role, currentUserID int64, welcome bool) string {
 	// --- filter bar ---
 	btnStyle := `style="padding:0.3rem 0.9rem;font-size:0.85rem;margin:0"`
 
@@ -147,9 +149,9 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
 
 	filterBar := fmt.Sprintf(`
 <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
-  <a href="/dashboard" role="button" %s %s>All</a>
-  <a href="/dashboard?filter=mine" role="button" %s %s>Mine</a>
-  <select onchange="this.value?location.href='/dashboard?author='+this.value:location.href='/dashboard'"
+  <a href="`+basePath+`/dashboard" role="button" %s %s>All</a>
+  <a href="`+basePath+`/dashboard?filter=mine" role="button" %s %s>Mine</a>
+  <select onchange="this.value?location.href='`+basePath+`/dashboard?author='+this.value:location.href='`+basePath+`/dashboard'"
           style="margin:0;padding:0.3rem 0.5rem;font-size:0.85rem;width:180px;flex-shrink:0">
     %s
   </select>
@@ -186,7 +188,7 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
 	if len(rows) == 0 {
 		createLink := ""
 		if role.CanCreate() {
-			createLink = `<a href="/configs/new" role="button">Create your first config</a>`
+			createLink = `<a href="` + basePath + `/configs/new" role="button">Create your first config</a>`
 		}
 		cards = fmt.Sprintf(`<div style="text-align:center;padding:3rem;color:var(--pico-muted-color)">
 		  <p style="font-size:2rem;margin-bottom:0.5rem">📭</p>
@@ -207,15 +209,15 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
 			)
 			editBtn := ""
 			if role.CanEditConfig(r.UserID, currentUserID) {
-				editBtn = fmt.Sprintf(`<a href="/configs/%d/edit" role="button" class="outline secondary" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">Edit</a>`, r.ID)
+				editBtn = fmt.Sprintf(`<a href="`+basePath+`/configs/%d/edit" role="button" class="outline secondary" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">Edit</a>`, r.ID)
 			}
 			cards += fmt.Sprintf(`
 <article style="margin-bottom:0.6rem;padding:0.9rem 1.2rem">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem">
-    <strong style="font-size:1rem"><a href="/configs/%d" style="text-decoration:none">%s</a></strong>
+    <strong style="font-size:1rem"><a href="`+basePath+`/configs/%d" style="text-decoration:none">%s</a></strong>
     <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
       %s
-      <a href="/configs/%d" role="button" class="outline" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">View</a>
+      <a href="`+basePath+`/configs/%d" role="button" class="outline" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">View</a>
       %s
     </div>
   </div>
@@ -247,7 +249,7 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
 </head>
 <body>
   <nav class="topnav">
-    <a href="/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
+    <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
     <div class="user-area">
       <span>%s</span>
       <span style="font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:999px;background:%s;color:%s;border:1px solid %s">%s</span>
@@ -267,11 +269,11 @@ func dashboardPageHTML(greeting string, rows []dashRow, allUsers []*db.User, fil
 </html>`,
 		html.EscapeString(greeting),
 		roleBadgeBg(role), roleBadgeFg(role), roleBadgeBorder(role), html.EscapeString(role.DisplayName()),
-		logoutForm,
+		logoutForm(basePath),
 		welcomeBanner,
 		func() string {
 			if role.CanCreate() {
-				return `<a href="/configs/new" role="button" style="margin:0">+ New Config</a>`
+				return `<a href="` + basePath + `/configs/new" role="button" style="margin:0">+ New Config</a>`
 			}
 			return ""
 		}(),
@@ -301,5 +303,6 @@ func roleBadgeBg(role perm.Role) string     { return roleColorMap[role].bg }
 func roleBadgeFg(role perm.Role) string     { return roleColorMap[role].fg }
 func roleBadgeBorder(role perm.Role) string { return roleColorMap[role].border }
 
-// logoutForm is a small inline POST form used in every nav bar.
-const logoutForm = `<form method="POST" action="/logout" style="margin:0;display:inline"><button type="submit" class="outline" style="padding:0.25rem 0.75rem;font-size:0.85rem;margin:0">Logout</button></form>`
+func logoutForm(basePath string) string {
+	return `<form method="POST" action="` + basePath + `/logout" style="margin:0;display:inline"><button type="submit" class="outline" style="padding:0.25rem 0.75rem;font-size:0.85rem;margin:0">Logout</button></form>`
+}
