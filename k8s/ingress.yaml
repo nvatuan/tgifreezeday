@@ -1,0 +1,27 @@
+# Requires an ingress controller (e.g. ingress-nginx) and cert-manager for TLS.
+# Adjust annotations to match your ingress controller.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tgifreezeday
+  namespace: tgifreezeday
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"   # replace with your issuer
+spec:
+  ingressClassName: nginx   # replace with your ingress class
+  tls:
+    - hosts:
+        - tgifreezeday.example.com   # replace
+      secretName: tgifreezeday-tls
+  rules:
+    - host: tgifreezeday.example.com   # replace
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tgifreezeday
+                port:
+                  name: http

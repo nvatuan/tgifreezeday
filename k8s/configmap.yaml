@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tgifreezeday-config
+data:
+  GOOGLE_OAUTH_REDIRECT_URL: "https://tgifreezeday.com/oauth/callback"
+  DB_PATH: "/data/tgifreezeday.db"
+  BASE_PATH: "/tgifreezeday"
+  PORT: "8080"
+  HTTPS_ONLY: "true"
+  LOG_FORMAT: "json"
+  LOG_LEVEL: "info"

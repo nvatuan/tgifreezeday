@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tgifreezeday-svc
+spec:
+  selector:
+    app: tgifreezeday
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tgifreezeday
+  labels:
+    app: tgifreezeday
+spec:
+  serviceName: tgifreezeday-svc
+  replicas: 1   # SQLite is single-writer; keep at 1
+  selector:
+    matchLabels:
+      app: tgifreezeday
+  template:
+    metadata:
+      labels:
+        app: tgifreezeday
+    spec:
+      tolerations:
+      - key: kubernetes.io/arch
+        operator: Equal
+        value: arm64
+        effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - arm64
+      # --- Security: run as the same UID/GID the Dockerfile creates (1001) ---
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Ensure the DB file is owned correctly before the app starts
+      initContainers:
+      - name: fix-db-perms
+        image: busybox:1.36
+        command: ["sh", "-c", "touch /data/tgifreezeday.db && chmod 600 /data/tgifreezeday.db"]
+        volumeMounts:
+        - name: db
+          mountPath: /data
+        resources:
+          requests:
+            cpu: 200m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        securityContext:
+          runAsUser: 1001
+          runAsGroup: 1001
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+
+      containers:
+      - name: tgifreezeday
+        image: ghcr.io/nvatuan/tgifreezeday:main-b09f1c9
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+
+        env:
+        # Secrets
+        - name: GOOGLE_OAUTH_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: tgifreezeday-secrets
+              key: GOOGLE_OAUTH_CLIENT_ID
+        - name: GOOGLE_OAUTH_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: tgifreezeday-secrets
+              key: GOOGLE_OAUTH_CLIENT_SECRET
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: tgifreezeday-secrets
+              key: SESSION_SECRET
+        - name: POWER_USER_EMAIL_LIST
+          valueFrom:
+            secretKeyRef:
+              name: tgifreezeday-secrets
+              key: POWER_USER_EMAIL_LIST
+        - name: WRITE_USER_EMAIL_LIST
+          valueFrom:
+            secretKeyRef:
+              name: tgifreezeday-secrets
+              key: WRITE_USER_EMAIL_LIST
+
+        # Config (non-secret), merge all from ./configmap.yaml
+        envFrom:
+        - configMapRef:
+            name: tgifreezeday-config
+
+        volumeMounts:
+        - name: db
+          mountPath: /data
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+
+        readinessProbe:
+          httpGet:
+            path: /tgifreezeday/login
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+        livenessProbe:
+          httpGet:
+            path: /tgifreezeday/login
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+
+      volumes:
+      - name: db
+        persistentVolumeClaim:
+          claimName: tgifreezeday-db
