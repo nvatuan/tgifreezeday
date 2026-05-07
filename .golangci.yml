@@ -28,6 +28,10 @@ linters:
           disabled: true
         - name: package-comments
           disabled: true
+    goconst:
+      min-occurrences: 5  # CSS hex literals and short YAML key strings in templates don't need Go constants
     gosec:
       excludes:
         - G118  # background goroutines for async validation are intentional
+        - G124  # session cookies have Secure/HttpOnly/SameSite set; Clear() is a deletion cookie
+        - G710  # redirectTo paths are internal constants, not user-controlled input

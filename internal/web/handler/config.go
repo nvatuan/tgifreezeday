@@ -109,7 +109,7 @@ func (h *ConfigHandler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid config id")
 		return
 	}
-	cfg, err := h.configs.Get(id, user.ID)
+	cfg, err := h.getConfig(r.Context(), id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
@@ -127,7 +127,7 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid config id")
 		return
 	}
-	cfg, err := h.configs.Get(id, user.ID)
+	cfg, err := h.getConfig(r.Context(), id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
@@ -170,7 +170,7 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, err := h.configs.Get(id, user.ID)
+	cfg, err := h.getConfig(r.Context(), id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
@@ -180,7 +180,7 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.configs.Update(id, user.ID, name, yamlContent); err != nil {
+	if err := h.configs.Update(id, cfg.UserID, name, yamlContent); err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to update config")
 		return
 	}
@@ -200,7 +200,7 @@ func (h *ConfigHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ConfigHandler) doDelete(w http.ResponseWriter, r *http.Request, id, userID int64) {
-	cfg, err := h.configs.Get(id, userID)
+	cfg, err := h.getConfig(r.Context(), id, userID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
@@ -209,7 +209,7 @@ func (h *ConfigHandler) doDelete(w http.ResponseWriter, r *http.Request, id, use
 		httpError(w, http.StatusForbidden, "you do not have permission to delete this config")
 		return
 	}
-	if err := h.configs.Delete(id, userID); err != nil {
+	if err := h.configs.Delete(id, cfg.UserID); err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to delete config")
 		return
 	}
@@ -226,7 +226,7 @@ func (h *ConfigHandler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid config id")
 		return
 	}
-	cfg, err := h.configs.Get(id, user.ID)
+	cfg, err := h.getConfig(r.Context(), id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
@@ -252,7 +252,7 @@ func (h *ConfigHandler) HandleSync(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid config id")
 		return
 	}
-	cfg, err := h.configs.Get(id, user.ID)
+	cfg, err := h.getConfig(r.Context(), id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
@@ -274,7 +274,7 @@ func (h *ConfigHandler) HandleWipe(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid config id")
 		return
 	}
-	cfg, err := h.configs.Get(id, user.ID)
+	cfg, err := h.getConfig(r.Context(), id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
@@ -296,7 +296,7 @@ func (h *ConfigHandler) HandleListBlockers(w http.ResponseWriter, r *http.Reques
 		httpError(w, http.StatusBadRequest, "invalid config id")
 		return
 	}
-	cfg, err := h.configs.Get(id, user.ID)
+	cfg, err := h.getConfig(r.Context(), id, user.ID)
 	if err != nil || cfg == nil {
 		httpError(w, http.StatusNotFound, "config not found")
 		return
@@ -307,6 +307,17 @@ func (h *ConfigHandler) HandleListBlockers(w http.ResponseWriter, r *http.Reques
 }
 
 // --- internal helpers ---
+
+// getConfig fetches a config by ID. Power users can access any config;
+// all others are scoped to their own.
+// Note: sync/validate/wipe always use the acting user's own OAuth token,
+// so power users must have write access to the target calendar themselves.
+func (h *ConfigHandler) getConfig(ctx context.Context, id, userID int64) (*db.Config, error) {
+	if roleFromContext(ctx) == perm.RolePower {
+		return h.configs.GetByID(id)
+	}
+	return h.configs.Get(id, userID)
+}
 
 func (h *ConfigHandler) getToken(userID int64) (*oauth2.Token, error) {
 	token, err := h.tokens.Get(userID)

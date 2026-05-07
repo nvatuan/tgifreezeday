@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
+	"github.com/nvat/tgifreezeday/internal/logging"
 	"github.com/nvat/tgifreezeday/internal/session"
 	"golang.org/x/oauth2"
 )
@@ -89,23 +90,27 @@ func (h *AuthHandler) HandleOAuthCallback(w http.ResponseWriter, r *http.Request
 
 	token, err := h.oauthCfg.Exchange(context.Background(), code)
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, "failed to exchange code: "+err.Error())
+		logging.GetLogger().WithError(err).Error("OAuth token exchange failed")
+		httpError(w, http.StatusInternalServerError, "authentication failed")
 		return
 	}
 
 	info, err := fetchUserInfo(h.oauthCfg, token)
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, "failed to fetch user info: "+err.Error())
+		logging.GetLogger().WithError(err).Error("failed to fetch user info from Google")
+		httpError(w, http.StatusInternalServerError, "authentication failed")
 		return
 	}
 
 	user, err := h.users.Upsert(info.ID, info.Email, info.Name)
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, "failed to upsert user: "+err.Error())
+		logging.GetLogger().WithError(err).Error("failed to upsert user")
+		httpError(w, http.StatusInternalServerError, "authentication failed")
 		return
 	}
 	if err := h.tokens.Upsert(user.ID, token); err != nil {
-		httpError(w, http.StatusInternalServerError, "failed to store token: "+err.Error())
+		logging.GetLogger().WithError(err).Error("failed to store OAuth token")
+		httpError(w, http.StatusInternalServerError, "authentication failed")
 		return
 	}
 

@@ -7,16 +7,29 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	tsFormat   = "2006-01-02T15:04:05.000Z07:00"
+	fieldTime  = "timestamp"
+	fieldLevel = "level"
+	fieldMsg   = "message"
+)
+
+func fieldMap() logrus.FieldMap {
+	return logrus.FieldMap{
+		logrus.FieldKeyTime:  fieldTime,
+		logrus.FieldKeyLevel: fieldLevel,
+		logrus.FieldKeyMsg:   fieldMsg,
+	}
+}
+
 // SetupLogger configures logrus with environment variables
 func SetupLogger() *logrus.Logger {
 	logger := logrus.New()
 
-	// Set log level from environment variable (default: info)
 	logLevel := strings.ToLower(os.Getenv("LOG_LEVEL"))
 	if logLevel == "" {
 		logLevel = "info"
 	}
-
 	level, err := logrus.ParseLevel(logLevel)
 	if err != nil {
 		logger.Warnf("Invalid log level '%s', using 'info'", logLevel)
@@ -24,7 +37,6 @@ func SetupLogger() *logrus.Logger {
 	}
 	logger.SetLevel(level)
 
-	// Set formatter based on LOG_FORMAT environment variable
 	logFormat := strings.ToLower(os.Getenv("LOG_FORMAT"))
 	if logFormat == "" {
 		logFormat = "json"
@@ -32,48 +44,17 @@ func SetupLogger() *logrus.Logger {
 
 	switch logFormat {
 	case "json":
-		logger.SetFormatter(&logrus.JSONFormatter{
-			TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
-			FieldMap: logrus.FieldMap{
-				logrus.FieldKeyTime:  "timestamp",
-				logrus.FieldKeyLevel: "level",
-				logrus.FieldKeyMsg:   "message",
-			},
-		})
+		logger.SetFormatter(&logrus.JSONFormatter{TimestampFormat: tsFormat, FieldMap: fieldMap()})
 	case "text":
-		logger.SetFormatter(&logrus.TextFormatter{
-			TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
-			FieldMap: logrus.FieldMap{
-				logrus.FieldKeyTime:  "timestamp",
-				logrus.FieldKeyLevel: "level",
-				logrus.FieldKeyMsg:   "message",
-			},
-		})
+		logger.SetFormatter(&logrus.TextFormatter{TimestampFormat: tsFormat, FieldMap: fieldMap()})
 	case "colored", "color":
-		logger.SetFormatter(&logrus.TextFormatter{
-			ForceColors:     true,
-			TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
-			FieldMap: logrus.FieldMap{
-				logrus.FieldKeyTime:  "timestamp",
-				logrus.FieldKeyLevel: "level",
-				logrus.FieldKeyMsg:   "message",
-			},
-		})
+		logger.SetFormatter(&logrus.TextFormatter{ForceColors: true, TimestampFormat: tsFormat, FieldMap: fieldMap()})
 	default:
 		logger.Warnf("Invalid log format '%s', using 'json'", logFormat)
-		logger.SetFormatter(&logrus.JSONFormatter{
-			TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
-			FieldMap: logrus.FieldMap{
-				logrus.FieldKeyTime:  "timestamp",
-				logrus.FieldKeyLevel: "level",
-				logrus.FieldKeyMsg:   "message",
-			},
-		})
+		logger.SetFormatter(&logrus.JSONFormatter{TimestampFormat: tsFormat, FieldMap: fieldMap()})
 	}
 
-	// Use stdout for all log levels
 	logger.SetOutput(os.Stdout)
-
 	return logger
 }
 
