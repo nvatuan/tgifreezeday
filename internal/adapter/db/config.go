@@ -106,6 +106,25 @@ func (s *ConfigStore) Get(id, userID int64) (*Config, error) {
 	return c, nil
 }
 
+// GetByID fetches a config by ID without scoping by user. Use only for power-user access.
+func (s *ConfigStore) GetByID(id int64) (*Config, error) {
+	c := &Config{}
+	err := s.db.QueryRow(`
+		SELECT id, user_id, name, schema_version, config_yaml, status, status_message, created_at, updated_at
+		FROM configs WHERE id = ?
+	`, id).Scan(
+		&c.ID, &c.UserID, &c.Name, &c.SchemaVersion, &c.ConfigYAML,
+		&c.Status, &c.StatusMessage, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get config by id: %w", err)
+	}
+	return c, nil
+}
+
 func (s *ConfigStore) ListByUser(userID int64) ([]*Config, error) {
 	rows, err := s.db.Query(`
 		SELECT id, user_id, name, schema_version, config_yaml, status, status_message, created_at, updated_at
