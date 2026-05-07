@@ -310,6 +310,8 @@ func (h *ConfigHandler) HandleListBlockers(w http.ResponseWriter, r *http.Reques
 
 // getConfig fetches a config by ID. Power users can access any config;
 // all others are scoped to their own.
+// Note: sync/validate/wipe always use the acting user's own OAuth token,
+// so power users must have write access to the target calendar themselves.
 func (h *ConfigHandler) getConfig(ctx context.Context, id, userID int64) (*db.Config, error) {
 	if roleFromContext(ctx) == perm.RolePower {
 		return h.configs.GetByID(id)
