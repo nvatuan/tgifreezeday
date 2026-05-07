@@ -8,17 +8,23 @@ import (
 	"html"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
 	"github.com/nvat/tgifreezeday/internal/logging"
 	"github.com/nvat/tgifreezeday/internal/perm"
+	"github.com/nvat/tgifreezeday/internal/scheduler"
 	"golang.org/x/oauth2"
 	googleapi "google.golang.org/api/googleapi"
 )
 
 var log = logging.GetLogger()
+
+// jstDisplay is used for formatting timestamps in the UI.
+var jstDisplay = time.FixedZone("JST", 9*60*60)
 
 type ConfigHandler struct {
 	configs     *db.ConfigStore
@@ -67,7 +73,7 @@ func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 	cals := h.fetchCalendars(r.Context(), user.ID)
 	schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", appconfig.CurrentSchemaVersion, "", "", string(schemaYAML), "", false, cals, h.basePath)) //nolint:errcheck
+	fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", appconfig.CurrentSchemaVersion, "", "", string(schemaYAML), "", false, db.SyncScheduleNone, cals, h.basePath)) //nolint:errcheck
 }
 
 // HandleCreate processes the config creation form.
@@ -84,16 +90,23 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.FormValue("name")
 	yamlContent := r.FormValue("config_yaml")
+	syncSchedule := parseSyncSchedule(r.FormValue("sync_schedule"))
 
 	if name == "" {
 		cals := h.fetchCalendars(r.Context(), user.ID)
 		schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", appconfig.CurrentSchemaVersion, name, yamlContent, string(schemaYAML), "Name is required.", false, cals, h.basePath)) //nolint:errcheck
+		fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", appconfig.CurrentSchemaVersion, name, yamlContent, string(schemaYAML), "Name is required.", false, syncSchedule, cals, h.basePath)) //nolint:errcheck
 		return
 	}
 
-	cfg, err := h.configs.Create(user.ID, name, appconfig.CurrentSchemaVersion, yamlContent)
+	var nextSyncAt *time.Time
+	if syncSchedule != db.SyncScheduleNone {
+		t := scheduler.NextSyncAt(syncSchedule, time.Now())
+		nextSyncAt = &t
+	}
+
+	cfg, err := h.configs.Create(user.ID, name, appconfig.CurrentSchemaVersion, yamlContent, syncSchedule, nextSyncAt)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to create config")
 		return
@@ -143,7 +156,7 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	action := fmt.Sprintf(h.basePath+"/configs/%d", id)
 	backURL := fmt.Sprintf(h.basePath+"/configs/%d", id)
-	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, cfg.SchemaVersion, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cals, h.basePath)) //nolint:errcheck
+	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, cfg.SchemaVersion, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cfg.SyncSchedule, cals, h.basePath)) //nolint:errcheck
 }
 
 // HandleUpdate processes the config edit form.
@@ -162,6 +175,7 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	name := r.FormValue("name")
 	yamlContent := r.FormValue("config_yaml")
+	syncSchedule := parseSyncSchedule(r.FormValue("sync_schedule"))
 
 	if name == "" {
 		httpError(w, http.StatusBadRequest, "name is required")
@@ -178,7 +192,9 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.configs.Update(id, cfg.UserID, name, yamlContent); err != nil {
+	nextSyncAt := computeNextSyncAt(cfg.SyncSchedule, cfg.NextSyncAt, syncSchedule)
+
+	if err := h.configs.Update(id, cfg.UserID, name, yamlContent, syncSchedule, nextSyncAt); err != nil {
 		httpError(w, http.StatusInternalServerError, "failed to update config")
 		return
 	}
@@ -259,6 +275,11 @@ func (h *ConfigHandler) HandleSync(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusForbidden, "you do not have permission to sync this config")
 		return
 	}
+	if cfg.SyncSchedule != db.SyncScheduleNone {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, actionResultHTML("Sync", "Manual operations are disabled while Auto-Sync is on. Disable Auto-Sync first if you want to sync or wipe manually.", true)) //nolint:errcheck
+		return
+	}
 	msg, isErr := h.runSync(r.Context(), user.ID, cfg)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, actionResultHTML("Sync", msg, isErr)) //nolint:errcheck
@@ -279,6 +300,11 @@ func (h *ConfigHandler) HandleWipe(w http.ResponseWriter, r *http.Request) {
 	}
 	if role := roleFromContext(r.Context()); !role.CanSyncConfig(cfg.UserID, user.ID) {
 		httpError(w, http.StatusForbidden, "you do not have permission to wipe this config")
+		return
+	}
+	if cfg.SyncSchedule != db.SyncScheduleNone {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, actionResultHTML("Wipe", "Manual operations are disabled while Auto-Sync is on. Disable Auto-Sync first if you want to sync or wipe manually.", true)) //nolint:errcheck
 		return
 	}
 	msg, isErr := h.runWipe(r.Context(), user.ID, cfg)
@@ -306,10 +332,6 @@ func (h *ConfigHandler) HandleListBlockers(w http.ResponseWriter, r *http.Reques
 
 // --- internal helpers ---
 
-// getConfig fetches a config by ID. Power users can access any config;
-// all others are scoped to their own.
-// Note: sync/validate/wipe always use the acting user's own OAuth token,
-// so power users must have write access to the target calendar themselves.
 func (h *ConfigHandler) getConfig(ctx context.Context, id, userID int64) (*db.Config, error) {
 	if roleFromContext(ctx) == perm.RolePower {
 		return h.configs.GetByID(id)
@@ -484,10 +506,33 @@ func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.
 </div>`, len(items), html.EscapeString(rangeLabel), html.EscapeString(string(jsonBytes)))
 }
 
+// --- schedule helpers ---
+
+func parseSyncSchedule(s string) string {
+	switch s {
+	case db.SyncScheduleWeekly, db.SyncScheduleMonthly:
+		return s
+	default:
+		return db.SyncScheduleNone
+	}
+}
+
+// computeNextSyncAt returns the appropriate next_sync_at when a config is saved.
+// If the schedule hasn't changed, we preserve the existing next_sync_at.
+// If it changed, we compute a new one (or clear it for "none").
+func computeNextSyncAt(oldSchedule string, oldNextSyncAt *time.Time, newSchedule string) *time.Time {
+	if oldSchedule == newSchedule {
+		return oldNextSyncAt
+	}
+	if newSchedule == db.SyncScheduleNone {
+		return nil
+	}
+	t := scheduler.NextSyncAt(newSchedule, time.Now())
+	return &t
+}
+
 // --- HTML fragments ---
 
-// validateResultHTML returns an HTMX OOB response: primary content for #action-result
-// plus an out-of-band swap to update #status-badge simultaneously.
 func validateResultHTML(oldStatus, newStatus db.ConfigStatus, msg string) string {
 	var summary string
 	if oldStatus == newStatus {
@@ -507,8 +552,6 @@ func validateResultHTML(oldStatus, newStatus db.ConfigStatus, msg string) string
 		detail = fmt.Sprintf(`<div style="margin-top:0.3rem;font-size:0.85rem;opacity:0.8">%s</div>`, html.EscapeString(msg))
 	}
 
-	// Primary content replaces #action-result.
-	// OOB span replaces #status-badge without a second request.
 	return fmt.Sprintf(`
 <div style="background:%s;border:1px solid %s;color:%s;padding:0.75rem 1rem;border-radius:0.5rem;margin-top:0.75rem;font-size:0.9rem">
   <strong>Validate finished.</strong> %s%s
@@ -542,11 +585,13 @@ func calendarOptions(cals []*googlecalendar.CalendarItem) string {
 	if len(cals) == 0 {
 		return ""
 	}
-	opts := `<option value="">-- select to fill calendar ID in YAML --</option>`
+	var sb strings.Builder
+	sb.WriteString(`<option value="">-- select to fill calendar ID in YAML --</option>`)
 	for _, c := range cals {
-		opts += fmt.Sprintf(`<option value="%s">%s</option>`,
+		fmt.Fprintf(&sb, `<option value="%s">%s</option>`,
 			html.EscapeString(c.ID), html.EscapeString(c.Summary+" ("+c.ID+")"))
 	}
+	opts := sb.String()
 	return fmt.Sprintf(`
 <details style="margin-bottom:1rem">
   <summary style="cursor:pointer;font-weight:600">📅 Pick target calendar</summary>
@@ -574,6 +619,40 @@ function applyCalendarId(id) {
 </script>`, opts)
 }
 
+func autoSyncInfoHTML(cfg *db.Config) string {
+	if cfg.SyncSchedule == db.SyncScheduleNone {
+		return ""
+	}
+
+	scheduleLabel := map[string]string{
+		db.SyncScheduleWeekly:  "weekly (Mon 09:00 JST)",
+		db.SyncScheduleMonthly: "monthly (1st 09:00 JST)",
+	}[cfg.SyncSchedule]
+
+	lastSyncHTML := `<span style="color:var(--pico-muted-color)">No auto-sync has run yet.</span>`
+	if cfg.LastAutoSyncedAt != nil {
+		lastAt := cfg.LastAutoSyncedAt.In(jstDisplay).Format("2006-01-02 15:04 JST")
+		result := ""
+		if cfg.LastAutoSyncResult != nil {
+			result = " — " + html.EscapeString(*cfg.LastAutoSyncResult)
+		}
+		lastSyncHTML = fmt.Sprintf(`<strong>%s</strong>%s`, html.EscapeString(lastAt), result)
+	}
+
+	nextSyncHTML := `<span style="color:var(--pico-muted-color)">—</span>`
+	if cfg.NextSyncAt != nil {
+		nextAt := cfg.NextSyncAt.In(jstDisplay).Format("2006-01-02 15:04 JST")
+		nextSyncHTML = fmt.Sprintf(`<strong>%s</strong>`, html.EscapeString(nextAt))
+	}
+
+	return fmt.Sprintf(`
+<div style="background:var(--pico-card-background-color);border:1px solid var(--pico-card-border-color);border-radius:0.5rem;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.88rem">
+  <div style="font-weight:600;margin-bottom:0.4rem">⏰ Auto-Sync: %s</div>
+  <div style="color:var(--pico-muted-color)">Last run: %s</div>
+  <div style="color:var(--pico-muted-color);margin-top:0.2rem">Next run: %s</div>
+</div>`, html.EscapeString(scheduleLabel), lastSyncHTML, nextSyncHTML)
+}
+
 func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role perm.Role) string {
 	badge := statusBadgeHTML(cfg.Status, cfg.StatusMessage)
 	escapedName := html.EscapeString(cfg.Name)
@@ -581,15 +660,18 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 	escapedYAML := html.EscapeString(cfg.ConfigYAML)
 	canSync := role.CanSyncConfig(cfg.UserID, currentUserID)
 	canEdit := role.CanEditConfig(cfg.UserID, currentUserID)
+	autoSyncEnabled := cfg.SyncSchedule != db.SyncScheduleNone
 
 	editBtnHTML := ""
 	if canEdit {
 		editBtnHTML = fmt.Sprintf(`<a href="`+basePath+`/configs/%d/edit" role="button" class="outline" style="margin:0;padding:0.4rem 1rem;font-size:0.88rem">&#9998; Edit</a>`, cfg.ID)
 	}
 
+	const disabledTitle = "Manual operations are disabled while Auto-Sync is on. Disable Auto-Sync first if you want to sync or wipe manually."
+
 	syncActionsHTML := ""
 	if canSync {
-		syncActionsHTML = fmt.Sprintf(`
+		validateBtn := fmt.Sprintf(`
     <button
       hx-post="`+basePath+`/configs/%d/validate"
       hx-target="#action-result"
@@ -598,7 +680,20 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
       class="outline"
       title="Re-check the config YAML and verify calendar write access">
       🔍 Validate
-    </button>
+    </button>`, cfg.ID)
+
+		var syncBtn, wipeBtn string
+		if autoSyncEnabled {
+			syncBtn = fmt.Sprintf(`
+    <button disabled title="%s" style="cursor:not-allowed;opacity:0.5">
+      ▶ Sync
+    </button>`, html.EscapeString(disabledTitle))
+			wipeBtn = fmt.Sprintf(`
+    <button disabled title="%s" class="outline" style="cursor:not-allowed;opacity:0.5">
+      🗑 Wipe Blockers
+    </button>`, html.EscapeString(disabledTitle))
+		} else {
+			syncBtn = fmt.Sprintf(`
     <button
       hx-post="`+basePath+`/configs/%d/sync"
       hx-target="#action-result"
@@ -606,7 +701,8 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
       hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Syncing — reading holidays and writing blockers&#8230;</p>'"
       title="Read public holidays, calculate freeze days, and create blocker events on your calendar">
       ▶ Sync
-    </button>
+    </button>`, cfg.ID)
+			wipeBtn = fmt.Sprintf(`
     <button
       hx-post="`+basePath+`/configs/%d/wipe"
       hx-target="#action-result"
@@ -615,7 +711,15 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
       class="outline"
       title="Remove all managed blocker events in the lookback/lookahead date range">
       🗑 Wipe Blockers
-    </button>`, cfg.ID, cfg.ID, cfg.ID)
+    </button>`, cfg.ID)
+		}
+		syncActionsHTML = validateBtn + syncBtn + wipeBtn
+	}
+
+	autoSyncBadge := ""
+	if autoSyncEnabled {
+		autoSyncBadge = fmt.Sprintf(` &nbsp;·&nbsp; <strong style="color:#60a5fa">⏰ auto-sync: %s</strong>`,
+			html.EscapeString(cfg.SyncSchedule))
 	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>
@@ -649,10 +753,8 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
     .action-bar { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
     .action-bar button, .action-bar a[role=button] { margin:0; padding:0.45rem 1rem; font-size:0.88rem; }
     .ack { opacity:0.65; font-style:italic; padding:0.5rem 0; font-size:0.9rem; }
-    /* CodeMirror read-only viewer */
     .CodeMirror { height: auto; font-size: 0.88rem; line-height: 1.5; border: 1px solid var(--pico-card-border-color); border-radius: 0.5rem; }
     .CodeMirror-cursor { display: none !important; }
-    /* Prism for HTMX-injected JSON blockers */
     pre[class*="language-"] { line-height: 1.5 !important; white-space: pre-wrap; word-break: break-word; font-size: 0.84rem; border-radius: 0.5rem; }
     .line-numbers .line-numbers-rows > span::before { line-height: 1.5; }
     #blockers-panel pre { margin-top: 0.5rem; }
@@ -689,9 +791,11 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
     </div>
     %s
   </div>
-  <div style="font-size:0.85rem;color:var(--pico-muted-color);margin-bottom:1.5rem">
-    schema: %s &nbsp;·&nbsp; Status: <span id="status-badge">%s</span>
+  <div style="font-size:0.85rem;color:var(--pico-muted-color);margin-bottom:1rem">
+    schema: %s &nbsp;·&nbsp; Status: <span id="status-badge">%s</span>%s
   </div>
+
+  %s
 
   <div class="action-bar">
     %s
@@ -722,20 +826,40 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 		escapedName, logoutForm(basePath),
 		escapedName,
 		escapedName, editBtnHTML,
-		escapedSchema, badge,
+		escapedSchema, badge, autoSyncBadge,
+		autoSyncInfoHTML(cfg),
 		syncActionsHTML, cfg.ID,
 		escapedYAML,
 	)
 }
 
-func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, schemaYAML, formErr string, isEdit bool, cals []*googlecalendar.CalendarItem, basePath string) string {
+func syncScheduleOptions(selected string) string {
+	options := []struct {
+		value, label string
+	}{
+		{db.SyncScheduleNone, "Off (manual only)"},
+		{db.SyncScheduleWeekly, "Weekly (Mon 09:00 JST)"},
+		{db.SyncScheduleMonthly, "Monthly (1st 09:00 JST)"},
+	}
+	var sb strings.Builder
+	for _, o := range options {
+		sel := ""
+		if o.value == selected {
+			sel = " selected"
+		}
+		fmt.Fprintf(&sb, `<option value="%s"%s>%s</option>`,
+			html.EscapeString(o.value), sel, html.EscapeString(o.label))
+	}
+	return sb.String()
+}
+
+func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, _ /* schemaYAML */, formErr string, isEdit bool, syncSchedule string, cals []*googlecalendar.CalendarItem, basePath string) string {
 	errHTML := ""
 	if formErr != "" {
 		errHTML = fmt.Sprintf(`<div style="background:#4a1122;border:1px solid #7f1d1d;color:#f87171;padding:0.75rem 1rem;border-radius:0.5rem;margin-bottom:1rem">%s</div>`,
 			html.EscapeString(formErr))
 	}
 
-	// Breadcrumb: "Configs › Name › Edit" or "Configs › New Config"
 	var breadcrumb, pageHeader string
 	if isEdit {
 		breadcrumb = fmt.Sprintf(`<a href="`+basePath+`/dashboard">Configs</a> &rsaquo; <a href="%s">%s</a> &rsaquo; Edit`,
@@ -797,6 +921,14 @@ writeTo:
 		html.EscapeString(schemaVersion),
 	)
 
+	autoSyncPicker := fmt.Sprintf(`
+<label for="sync_schedule">Auto-Sync
+  <select id="sync_schedule" name="sync_schedule">
+    %s
+  </select>
+  <small style="color:var(--pico-muted-color)">Weekly fires every Monday 09:00 JST. Monthly fires on the 1st at 09:00 JST. When enabled, manual Sync and Wipe are disabled.</small>
+</label>`, syncScheduleOptions(syncSchedule))
+
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -818,7 +950,6 @@ writeTo:
     .back-btn:hover { color:var(--pico-color); }
     .form-actions { display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; }
     .form-actions button, .form-actions a[role=button] { margin:0; width:auto; padding:0.45rem 1.1rem; font-size:0.9rem; }
-    /* CodeMirror */
     .CodeMirror {
       height: 480px;
       font-size: 0.88rem;
@@ -849,6 +980,7 @@ writeTo:
     <label for="name">Config Name
       <input type="text" id="name" name="name" value="%s" placeholder="e.g. Japan prod freeze" required>
     </label>
+    %s
     %s
     %s
     <div style="margin-bottom:1rem">
@@ -888,6 +1020,7 @@ document.getElementById('config-form').addEventListener('submit', function() {
 		html.EscapeString(action),
 		html.EscapeString(name),
 		schemaPicker,
+		autoSyncPicker,
 		calPicker,
 		html.EscapeString(yamlContent),
 		deleteBtn,

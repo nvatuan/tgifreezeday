@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	"github.com/nvat/tgifreezeday/internal/logging"
 	"github.com/nvat/tgifreezeday/internal/perm"
+	"github.com/nvat/tgifreezeday/internal/scheduler"
 	"github.com/nvat/tgifreezeday/internal/web/handler"
 )
 
@@ -63,6 +65,12 @@ func main() {
 		os.Getenv("POWER_USER_EMAIL_LIST"),
 		os.Getenv("WRITE_USER_EMAIL_LIST"),
 	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sched := scheduler.New(configs, tokens, oauthCfg)
+	go sched.Start(ctx)
 
 	authH := handler.NewAuthHandler(users, tokens, secret, httpsOnly, oauthCfg, basePath)
 	dashH := handler.NewDashboardHandler(configs, users, tokens, oauthCfg, basePath)

@@ -25,7 +25,7 @@ func TestConfigStore_GetByID_CrossUser(t *testing.T) {
 		t.Fatalf("upsert user2: %v", err)
 	}
 
-	cfg, err := configs.Create(user1.ID, "Test Config", "v1", "shared:\n  lookbackDays: 7\n")
+	cfg, err := configs.Create(user1.ID, "Test Config", "v1", "shared:\n  lookbackDays: 7\n", "none", nil)
 	if err != nil {
 		t.Fatalf("create config: %v", err)
 	}
