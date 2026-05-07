@@ -750,24 +750,28 @@ func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, sc
 		pageHeader = `New Config`
 	}
 
-	placeholder := `shared:
+	defaultYAML := `shared:
   lookbackDays: 20
-  lookaheadDays: 60
+  lookaheadDays: 20
 
 readFrom:
   googleCalendar:
     countryCode: "jpn"
     todayIsFreezeDayIf:
-    - today: [isTheFirstBusinessDayOfTheMonth]
-    - today: [isTheLastBusinessDayOfTheMonth]
-    - tomorrow: [isNonBusinessDay]
+    - today:
+      - isTheFirstBusinessDayOfTheMonth
+    - today:
+      - isTheLastBusinessDayOfTheMonth
+    - tomorrow:
+      - isNonBusinessDay
 
 writeTo:
   googleCalendar:
-    id: "your-calendar-id@group.calendar.google.com"
-    ifTodayIsFreezeDay:
-      default:
-        summary: "FREEZE DAY - No Deployments"`
+    id: "ngo.van.anh.tuan@moneyforward.co.jp"`
+
+	if yamlContent == "" {
+		yamlContent = defaultYAML
+	}
 
 	deleteBtn := ""
 	if isEdit {
@@ -852,7 +856,7 @@ writeTo:
     %s
     <div style="margin-bottom:1rem">
       <label class="yaml-label" for="config_yaml">Config YAML</label>
-      <textarea id="config_yaml" name="config_yaml" placeholder="%s" style="display:none">%s</textarea>
+      <textarea id="config_yaml" name="config_yaml" style="display:none">%s</textarea>
     </div>
     <div class="form-actions">
       <button type="submit">Save</button>
@@ -888,7 +892,6 @@ document.getElementById('config-form').addEventListener('submit', function() {
 		html.EscapeString(name),
 		schemaPicker,
 		calPicker,
-		placeholder,
 		html.EscapeString(yamlContent),
 		deleteBtn,
 		html.EscapeString(backURL),
