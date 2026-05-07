@@ -25,14 +25,16 @@ type ConfigHandler struct {
 	tokens      *db.TokenStore
 	oauthCfg    *oauth2.Config
 	validateSem chan struct{}
+	basePath    string
 }
 
-func NewConfigHandler(configs *db.ConfigStore, tokens *db.TokenStore, oauthCfg *oauth2.Config) *ConfigHandler {
+func NewConfigHandler(configs *db.ConfigStore, tokens *db.TokenStore, oauthCfg *oauth2.Config, basePath string) *ConfigHandler {
 	return &ConfigHandler{
 		configs:     configs,
 		tokens:      tokens,
 		oauthCfg:    oauthCfg,
 		validateSem: make(chan struct{}, 5),
+		basePath:    basePath,
 	}
 }
 
@@ -65,7 +67,7 @@ func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 	cals := h.fetchCalendars(r.Context(), user.ID)
 	schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configFormHTML("New Config", "/configs", "/dashboard", appconfig.CurrentSchemaVersion, "", "", string(schemaYAML), "", false, cals)) //nolint:errcheck
+	fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", appconfig.CurrentSchemaVersion, "", "", string(schemaYAML), "", false, cals, h.basePath)) //nolint:errcheck
 }
 
 // HandleCreate processes the config creation form.
@@ -87,7 +89,7 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		cals := h.fetchCalendars(r.Context(), user.ID)
 		schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, configFormHTML("New Config", "/configs", "/dashboard", appconfig.CurrentSchemaVersion, name, yamlContent, string(schemaYAML), "Name is required.", false, cals)) //nolint:errcheck
+		fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", appconfig.CurrentSchemaVersion, name, yamlContent, string(schemaYAML), "Name is required.", false, cals, h.basePath)) //nolint:errcheck
 		return
 	}
 
@@ -98,7 +100,7 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go h.validateAndUpdateStatus(cfg.ID, user.ID, yamlContent)
-	redirectTo(w, r, fmt.Sprintf("/configs/%d", cfg.ID))
+	redirectTo(w, r, fmt.Sprintf(h.basePath+"/configs/%d", cfg.ID))
 }
 
 // HandleDetail renders the config detail page.
@@ -116,7 +118,7 @@ func (h *ConfigHandler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	role := roleFromContext(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configDetailHTML(cfg, user.ID, role)) //nolint:errcheck
+	fmt.Fprint(w, configDetailHTML(h.basePath, cfg, user.ID, role)) //nolint:errcheck
 }
 
 // HandleEdit renders the config edit form pre-populated.
@@ -139,9 +141,9 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	cals := h.fetchCalendars(r.Context(), user.ID)
 	schemaYAML, _ := appconfig.SchemaYAML(cfg.SchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	action := fmt.Sprintf("/configs/%d", id)
-	backURL := fmt.Sprintf("/configs/%d", id)
-	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, cfg.SchemaVersion, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cals)) //nolint:errcheck
+	action := fmt.Sprintf(h.basePath+"/configs/%d", id)
+	backURL := fmt.Sprintf(h.basePath+"/configs/%d", id)
+	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, cfg.SchemaVersion, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cals, h.basePath)) //nolint:errcheck
 }
 
 // HandleUpdate processes the config edit form.
@@ -185,7 +187,7 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go h.validateAndUpdateStatus(id, user.ID, yamlContent)
-	redirectTo(w, r, fmt.Sprintf("/configs/%d", id))
+	redirectTo(w, r, fmt.Sprintf(h.basePath+"/configs/%d", id))
 }
 
 // HandleDelete deletes a config.
@@ -213,7 +215,7 @@ func (h *ConfigHandler) doDelete(w http.ResponseWriter, r *http.Request, id, use
 		httpError(w, http.StatusInternalServerError, "failed to delete config")
 		return
 	}
-	redirectTo(w, r, "/dashboard")
+	redirectTo(w, r, h.basePath+"/dashboard")
 }
 
 // HandleValidate re-validates a config. Returns HTMX OOB response:
@@ -576,7 +578,7 @@ function applyCalendarId(id) {
 </script>`, opts)
 }
 
-func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) string {
+func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role perm.Role) string {
 	badge := statusBadgeHTML(cfg.Status, cfg.StatusMessage)
 	escapedName := html.EscapeString(cfg.Name)
 	escapedSchema := html.EscapeString(cfg.SchemaVersion)
@@ -586,14 +588,14 @@ func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) strin
 
 	editBtnHTML := ""
 	if canEdit {
-		editBtnHTML = fmt.Sprintf(`<a href="/configs/%d/edit" role="button" class="outline" style="margin:0;padding:0.4rem 1rem;font-size:0.88rem">&#9998; Edit</a>`, cfg.ID)
+		editBtnHTML = fmt.Sprintf(`<a href="`+basePath+`/configs/%d/edit" role="button" class="outline" style="margin:0;padding:0.4rem 1rem;font-size:0.88rem">&#9998; Edit</a>`, cfg.ID)
 	}
 
 	syncActionsHTML := ""
 	if canSync {
 		syncActionsHTML = fmt.Sprintf(`
     <button
-      hx-post="/configs/%d/validate"
+      hx-post="`+basePath+`/configs/%d/validate"
       hx-target="#action-result"
       hx-swap="innerHTML"
       hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>🔍 Validating&#8230;</p>';document.getElementById('status-badge').innerHTML='<em class=ack>checking&#8230;</em>'"
@@ -602,7 +604,7 @@ func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) strin
       🔍 Validate
     </button>
     <button
-      hx-post="/configs/%d/sync"
+      hx-post="`+basePath+`/configs/%d/sync"
       hx-target="#action-result"
       hx-swap="innerHTML"
       hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Syncing — reading holidays and writing blockers&#8230;</p>'"
@@ -610,7 +612,7 @@ func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) strin
       ▶ Sync
     </button>
     <button
-      hx-post="/configs/%d/wipe"
+      hx-post="`+basePath+`/configs/%d/wipe"
       hx-target="#action-result"
       hx-swap="innerHTML"
       hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>⏳ Wiping blockers&#8230;</p>'"
@@ -679,14 +681,14 @@ func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) strin
 </head>
 <body>
 <nav class="topnav">
-  <a href="/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
+  <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
   <div>%s</div>
 </nav>
 <div class="page-content">
-  <div class="breadcrumb"><a href="/dashboard">Configs</a> &rsaquo; %s</div>
+  <div class="breadcrumb"><a href="`+basePath+`/dashboard">Configs</a> &rsaquo; %s</div>
   <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem">
     <div class="page-header">
-      <a href="/dashboard" class="back-btn" title="Back to Configs">&#8592;</a>
+      <a href="`+basePath+`/dashboard" class="back-btn" title="Back to Configs">&#8592;</a>
       <h2 style="margin:0">%s</h2>
     </div>
     %s
@@ -698,7 +700,7 @@ func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) strin
   <div class="action-bar">
     %s
     <button
-      hx-get="/configs/%d/blockers"
+      hx-get="`+basePath+`/configs/%d/blockers"
       hx-target="#blockers-panel"
       hx-swap="innerHTML"
       hx-on::before-request="document.getElementById('blockers-panel').innerHTML='<p class=ack>⏳ Loading blockers&#8230;</p>'"
@@ -721,7 +723,7 @@ func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) strin
 </div>
 </body>
 </html>`,
-		escapedName, logoutForm,
+		escapedName, logoutForm(basePath),
 		escapedName,
 		escapedName, editBtnHTML,
 		escapedSchema, badge,
@@ -730,7 +732,7 @@ func configDetailHTML(cfg *db.Config, currentUserID int64, role perm.Role) strin
 	)
 }
 
-func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, schemaYAML, formErr string, isEdit bool, cals []*googlecalendar.CalendarItem) string {
+func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, schemaYAML, formErr string, isEdit bool, cals []*googlecalendar.CalendarItem, basePath string) string {
 	errHTML := ""
 	if formErr != "" {
 		errHTML = fmt.Sprintf(`<div style="background:#4a1122;border:1px solid #7f1d1d;color:#f87171;padding:0.75rem 1rem;border-radius:0.5rem;margin-bottom:1rem">%s</div>`,
@@ -740,32 +742,36 @@ func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, sc
 	// Breadcrumb: "Configs › Name › Edit" or "Configs › New Config"
 	var breadcrumb, pageHeader string
 	if isEdit {
-		breadcrumb = fmt.Sprintf(`<a href="/dashboard">Configs</a> &rsaquo; <a href="%s">%s</a> &rsaquo; Edit`,
+		breadcrumb = fmt.Sprintf(`<a href="`+basePath+`/dashboard">Configs</a> &rsaquo; <a href="%s">%s</a> &rsaquo; Edit`,
 			html.EscapeString(backURL), html.EscapeString(name))
 		pageHeader = fmt.Sprintf(`Edit: %s`, html.EscapeString(name))
 	} else {
-		breadcrumb = `<a href="/dashboard">Configs</a> &rsaquo; New Config`
+		breadcrumb = `<a href="` + basePath + `/dashboard">Configs</a> &rsaquo; New Config`
 		pageHeader = `New Config`
 	}
 
-	placeholder := `shared:
+	defaultYAML := `shared:
   lookbackDays: 20
-  lookaheadDays: 60
+  lookaheadDays: 20
 
 readFrom:
   googleCalendar:
     countryCode: "jpn"
     todayIsFreezeDayIf:
-    - today: [isTheFirstBusinessDayOfTheMonth]
-    - today: [isTheLastBusinessDayOfTheMonth]
-    - tomorrow: [isNonBusinessDay]
+    - today:
+      - isTheFirstBusinessDayOfTheMonth
+    - today:
+      - isTheLastBusinessDayOfTheMonth
+    - tomorrow:
+      - isNonBusinessDay
 
 writeTo:
   googleCalendar:
-    id: "your-calendar-id@group.calendar.google.com"
-    ifTodayIsFreezeDay:
-      default:
-        summary: "FREEZE DAY - No Deployments"`
+    id: "ngo.van.anh.tuan@moneyforward.co.jp"`
+
+	if yamlContent == "" {
+		yamlContent = defaultYAML
+	}
 
 	deleteBtn := ""
 	if isEdit {
@@ -780,7 +786,7 @@ writeTo:
     <select id="schema_version" name="schema_version" style="flex:1;margin:0">
       <option value="v1"%s>v1 (current)</option>
     </select>
-    <a href="/schema/%s" target="_blank" title="View schema reference for %s"
+    <a href="`+basePath+`/schema/%s" target="_blank" title="View schema reference for %s"
        style="font-size:1.1rem;text-decoration:none;flex-shrink:0">ℹ️</a>
   </div>
 </label>`,
@@ -832,7 +838,7 @@ writeTo:
 </head>
 <body>
 <nav class="topnav">
-  <a href="/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
+  <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
   <div>%s</div>
 </nav>
 <div class="page-content">
@@ -850,7 +856,7 @@ writeTo:
     %s
     <div style="margin-bottom:1rem">
       <label class="yaml-label" for="config_yaml">Config YAML</label>
-      <textarea id="config_yaml" name="config_yaml" placeholder="%s" style="display:none">%s</textarea>
+      <textarea id="config_yaml" name="config_yaml" style="display:none">%s</textarea>
     </div>
     <div class="form-actions">
       <button type="submit">Save</button>
@@ -877,7 +883,7 @@ document.getElementById('config-form').addEventListener('submit', function() {
 </body>
 </html>`,
 		html.EscapeString(title),
-		logoutForm,
+		logoutForm(basePath),
 		breadcrumb,
 		html.EscapeString(backURL),
 		pageHeader,
@@ -886,7 +892,6 @@ document.getElementById('config-form').addEventListener('submit', function() {
 		html.EscapeString(name),
 		schemaPicker,
 		calPicker,
-		placeholder,
 		html.EscapeString(yamlContent),
 		deleteBtn,
 		html.EscapeString(backURL),

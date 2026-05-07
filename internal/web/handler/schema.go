@@ -8,8 +8,15 @@ import (
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
 )
 
-// HandleSchemaRef renders the schema reference page for a given version.
-func HandleSchemaRef(w http.ResponseWriter, r *http.Request) {
+type SchemaHandler struct {
+	basePath string
+}
+
+func NewSchemaHandler(basePath string) *SchemaHandler {
+	return &SchemaHandler{basePath: basePath}
+}
+
+func (h *SchemaHandler) HandleSchemaRef(w http.ResponseWriter, r *http.Request) {
 	version := r.PathValue("version")
 	schemaYAML, ok := appconfig.SchemaYAML(version)
 	if !ok {
@@ -17,10 +24,10 @@ func HandleSchemaRef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, schemaRefHTML(version, string(schemaYAML))) //nolint:errcheck
+	fmt.Fprint(w, schemaRefHTML(h.basePath, version, string(schemaYAML))) //nolint:errcheck
 }
 
-func schemaRefHTML(version, yamlContent string) string {
+func schemaRefHTML(basePath, version, yamlContent string) string {
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -65,12 +72,12 @@ func schemaRefHTML(version, yamlContent string) string {
 </head>
 <body>
 <nav class="topnav">
-  <a href="/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
+  <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
 </nav>
 <div class="page-content">
-  <div class="breadcrumb"><a href="/dashboard">Dashboard</a> &rsaquo; Schema &rsaquo; %s</div>
+  <div class="breadcrumb"><a href="`+basePath+`/dashboard">Dashboard</a> &rsaquo; Schema &rsaquo; %s</div>
   <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem">
-    <a href="/dashboard" class="back-btn" title="Back to Dashboard">&#8592;</a>
+    <a href="`+basePath+`/dashboard" class="back-btn" title="Back to Dashboard">&#8592;</a>
     <h2 style="margin:0">Config Schema <code>%s</code></h2>
     <span class="readonly-badge">read-only reference</span>
   </div>
