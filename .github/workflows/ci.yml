@@ -82,7 +82,7 @@ jobs:
       run: go test ./... -v
 
     - name: Build binary
-      run: go build -o bin/tgifreezeday ./cmd/tgifreezeday
+      run: go build -o bin/tgifreezeday ./cmd/server
     
   docker:
     name: Build and Push Docker Image
