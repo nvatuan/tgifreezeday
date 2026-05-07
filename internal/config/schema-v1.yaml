@@ -1,0 +1,53 @@
+# TGI Freeze Day - Config Schema v1
+# This file documents the fields accepted in the config YAML editor.
+# Validation is enforced by the application on save.
+
+fields:
+  shared.lookbackDays:
+    type: integer
+    required: true
+    min: 20
+    max: 60
+    description: Days to look back when calculating freeze days
+
+  shared.lookaheadDays:
+    type: integer
+    required: true
+    min: 20
+    max: 60
+    description: Days to look ahead when calculating freeze days
+
+  readFrom.googleCalendar.countryCode:
+    type: string
+    required: true
+    enum: [jpn, vnm]
+    description: ISO 3166 A-3 country code for the public holiday calendar
+
+  readFrom.googleCalendar.todayIsFreezeDayIf:
+    type: list
+    required: true
+    description: >
+      List of freeze day rules. Within one entry, conditions are AND'd.
+      Across entries, they are OR'd.
+    anchors: [yesterday, today, tomorrow]
+    conditions:
+      - isTheFirstBusinessDayOfTheMonth
+      - isTheLastBusinessDayOfTheMonth
+      - isNonBusinessDay
+
+  writeTo.googleCalendar.id:
+    type: string
+    required: true
+    description: Google Calendar ID to write blocker events to
+
+  writeTo.googleCalendar.ifTodayIsFreezeDay.default.summary:
+    type: string
+    required: false
+    maxLength: 250
+    description: Event title for blocker events (default provided if omitted)
+
+  writeTo.googleCalendar.ifTodayIsFreezeDay.default.description:
+    type: string
+    required: false
+    maxLength: 8000
+    description: Event description, HTML supported (default provided if omitted)
