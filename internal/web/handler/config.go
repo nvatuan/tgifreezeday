@@ -159,10 +159,6 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "invalid form")
 		return
 	}
-	if r.FormValue("_method") == "DELETE" {
-		h.doDelete(w, r, id, user.ID)
-		return
-	}
 
 	name := r.FormValue("name")
 	yamlContent := r.FormValue("config_yaml")
@@ -775,7 +771,8 @@ writeTo:
 
 	deleteBtn := ""
 	if isEdit {
-		deleteBtn = `<button type="submit" name="_method" value="DELETE" class="outline contrast" onclick="return confirm('Delete this config?')">Delete</button>`
+		deleteBtn = fmt.Sprintf(`<form method="POST" action="%s/delete" style="margin:0" onsubmit="return confirm('Delete this config?')"><button type="submit" class="outline contrast">Delete</button></form>`,
+			html.EscapeString(action))
 	}
 
 	calPicker := calendarOptions(cals)
