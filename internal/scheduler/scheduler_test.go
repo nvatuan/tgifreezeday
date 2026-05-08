@@ -6,7 +6,7 @@ import (
 )
 
 func jstTime(year int, month time.Month, day, hour, min int) time.Time {
-	return time.Date(year, month, day, hour, min, 0, 0, jst)
+	return time.Date(year, month, day, hour, min, 0, 0, JST)
 }
 
 func TestNextSyncAt_Weekly(t *testing.T) {
@@ -45,7 +45,7 @@ func TestNextSyncAt_Weekly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := NextSyncAt("weekly", tc.from)
 			if !got.Equal(tc.want.UTC()) {
-				t.Errorf("NextSyncAt(weekly, %v) = %v, want %v", tc.from, got.In(jst), tc.want.In(jst))
+				t.Errorf("NextSyncAt(weekly, %v) = %v, want %v", tc.from, got.In(JST), tc.want.In(JST))
 			}
 			if !got.After(tc.from) {
 				t.Errorf("result %v is not strictly after from %v", got, tc.from)
@@ -90,7 +90,7 @@ func TestNextSyncAt_Monthly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := NextSyncAt("monthly", tc.from)
 			if !got.Equal(tc.want.UTC()) {
-				t.Errorf("NextSyncAt(monthly, %v) = %v, want %v", tc.from, got.In(jst), tc.want.In(jst))
+				t.Errorf("NextSyncAt(monthly, %v) = %v, want %v", tc.from, got.In(JST), tc.want.In(JST))
 			}
 			if !got.After(tc.from) {
 				t.Errorf("result %v is not strictly after from %v", got, tc.from)

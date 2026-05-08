@@ -23,8 +23,8 @@ import (
 
 var log = logging.GetLogger()
 
-// jstDisplay is used for formatting timestamps in the UI.
-var jstDisplay = time.FixedZone("JST", 9*60*60)
+// jstDisplay aliases scheduler.JST for formatting timestamps in the UI.
+var jstDisplay = scheduler.JST
 
 type ConfigHandler struct {
 	configs     *db.ConfigStore
@@ -508,6 +508,8 @@ func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.
 
 // --- schedule helpers ---
 
+// parseSyncSchedule normalises the form value. Any unrecognised value (including
+// wrong-case variants) is silently treated as "none" — form tampering is harmless here.
 func parseSyncSchedule(s string) string {
 	switch s {
 	case db.SyncScheduleWeekly, db.SyncScheduleMonthly:
