@@ -44,8 +44,8 @@ The app is a web server. After starting it, open `http://localhost:8080` in your
 
 | Page | Description |
 |------|-------------|
-| Dashboard | Lists all your configs with their status |
-| Config Detail | View config YAML, run Sync / Wipe / Validate / List Blockers |
+| Dashboard | Lists all configs with status and auto-sync schedule badges |
+| Config Detail | View config YAML, run Sync / Wipe / Validate / List Blockers; configure Auto-Sync |
 | Config Edit | Edit config name, YAML, and schema version |
 
 ## Configuration
@@ -150,6 +150,20 @@ description: |
 **Supported tags**: `<br>`, `<ul><li>`, `<a href="">`, `<strong>`, `<em>`
 
 **Note**: Avoid mixing newlines with `<br>` tags to prevent extra spacing.
+
+## Auto-Sync
+
+Auto-Sync runs the sync automatically on a recurring schedule so you don't have to click **Sync** manually.
+
+Configure it from the Config Detail page: click the **Auto Sync: off/weekly/monthly** label next to the config status. A modal lets you pick a schedule:
+
+| Schedule | When it runs |
+|----------|--------------|
+| Off | Manual only — no automatic sync |
+| Weekly | Every Monday at 09:00 JST |
+| Monthly | 1st of each month at 09:00 JST |
+
+> **Note:** When Auto-Sync is enabled, the manual **Sync** and **Wipe** buttons are disabled to prevent conflicts. Disable Auto-Sync first to use them again.
 
 ## Setup, Running, Contribute
 
