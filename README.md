@@ -1,13 +1,14 @@
 # TGI Freeze Day
 
+🙏🧔🏽‍♀️👉🧊🗓️️ - Thank God It's Freeze Day
+
+_no need to touch prod to day, touch grass instead_
+
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/nvat/tgifreezeday/main/.github/badges/coverage.json)](https://github.com/nvat/tgifreezeday/actions/workflows/coverage.yml)
 
-<img src="./docs/tgifreezeday.png">
+<!-- <img src="./docs/tgifreezeday.png"> -->
 
-A Go application that helps announce production freeze days to ensure safe deployments by:
-
-1. Fetching holidays events from Google Calendar
-2. Updating a specific calendar with freeze days information based on what you defined as a freeze-day
+A self-hosted web app that manages production freeze day blocker events on Google Calendar. Users log in with their Google account, define freeze-day rules in a YAML config, and the app creates blocker calendar events so the whole team knows when deployments are restricted.
 
 ## Concepts
 
@@ -18,27 +19,39 @@ A Go application that helps announce production freeze days to ensure safe deplo
 
 ```mermaid
 sequenceDiagram
-    participant App as tgifreezeday
+    actor User as User (browser)
+    participant App as tgifreezeday (web server)
     participant Source as Holiday Calendar
     participant Target as Team Calendar
 
+    User->>App: Log in with Google OAuth
+    User->>App: Create / edit config (YAML)
+    User->>App: Click Sync
     App->>Source: Read public holidays
     App->>App: Calculate freeze days
     App->>Target: Create blocker events
+    App->>User: Show result
 ```
 
-1. **Reads** public holiday data from Google Calendar
-2. **Calculates** which days are freeze days based on your rules  
-3. **Creates** blocker events on your team calendar
-4. **Manages** events automatically (add/remove as rules change)
+1. **Log in** with your Google account via OAuth
+2. **Create a config** — define your freeze-day rules and target calendar in YAML
+3. **Sync** — the app reads public holidays, calculates freeze days, and writes blocker events to your team calendar
+4. **Manage** — validate configs, wipe blockers, or list existing blocker events from the UI
 
-## Commands
+## Web UI
 
-- `tgifreezeday sync` - Update calendar with current freeze day rules
-- `tgifreezeday wipe-blockers` - Remove all managed events in time range
-- `tgifreezeday list-blockers` - Show all managed events with details
+The app is a web server. After starting it, open `http://localhost:8080` in your browser.
+
+| Page | Description |
+|------|-------------|
+| Dashboard | Lists all your configs with their status |
+| Config Detail | View config YAML, run Sync / Wipe / Validate / List Blockers |
+| Config Edit | Edit config name, YAML, and schema version |
 
 ## Configuration
+
+Using the webapp, you can create Configs and edit them. Configs is the way you create Events on your Google Calendar based on your rules of "what is a freeze day".
+Below show the configuration yaml example:
 
 ### Basic Example
 
@@ -49,17 +62,31 @@ shared:
   
 readFrom:
   googleCalendar:
-    countryCode: "jpn"   # Japan public holidays
+    # Basically this means check Japan public holidays calendar
+    countryCode: "jpn"
+
+    # This is a list, each entry is a key which can be [yesterday, today, tomorrow]
+    # Each key contains a list of "conditions checks" which is AND within the key, and OR'd all keys
+    # eg.
+    # todayIsFreezeDayIf:
+    #  - today: [isTheFirstBusinessDayOfTheMonth, isMonday]
+    #  - today: [isTheLastBusinessDayOfTheMonth] 
+    # Means Today is a FreezeDay if "today <Is The First Busines Day of The Month> AND <it is Monday>" OR "today <Is The Last Business Day Of the Month>"
+    # Note: isMonday isn't available yet as of 2026 May 8th version
     todayIsFreezeDayIf:
-      # - each key can be [yesterday, today, tomorrow]
       - today: [isTheFirstBusinessDayOfTheMonth]
       - today: [isTheLastBusinessDayOfTheMonth] 
       - tomorrow: [isNonBusinessDay]
       
 writeTo:
   googleCalendar:
+    # Calendar ID of the calendar to write blocker events to. The Webapp shall let you pick the calendar and fill the ID for you.
     id: "your-calendar-id@group.calendar.google.com"
+
+    # what to do if today is Freeze day
     ifTodayIsFreezeDay:
+      # Modifying the default blocker event: change summary and description.
+      # Description supports html tags (this is Google Cal feature, we just reuse it, it may change though we don't guarantee support)
       default:
         summary: "🚫 PRODUCTION FREEZE - No Deployments"
         description: |
@@ -126,7 +153,7 @@ description: |
 
 ## Setup, Running, Contribute
 
-Please check [CONTRIBUTE.md](./CONTRIBUTE.md)
+Please check [CONTRIBUTE.md](./CONTRIBUTE.md) for prerequisites, environment variables, build instructions, Docker, and Kubernetes deployment.
 
 ## License
 

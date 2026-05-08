@@ -249,7 +249,7 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
 </head>
 <body>
   <nav class="topnav">
-    <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
+    <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️👉🧊🗓️ TGI Freeze Day</a>
     <div class="user-area">
       <span>%s</span>
       <span style="font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:999px;background:%s;color:%s;border:1px solid %s">%s</span>
