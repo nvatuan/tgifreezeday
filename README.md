@@ -1,8 +1,12 @@
 # TGI Freeze Day
 
+🙏🧔🏽‍♀️👉🧊🗓️️ - Thank God It's Freeze Day
+
+_no need to touch prod to day, touch grass instead_
+
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/nvat/tgifreezeday/main/.github/badges/coverage.json)](https://github.com/nvat/tgifreezeday/actions/workflows/coverage.yml)
 
-<img src="./docs/tgifreezeday.png">
+<!-- <img src="./docs/tgifreezeday.png"> -->
 
 A self-hosted web app that manages production freeze day blocker events on Google Calendar. Users log in with their Google account, define freeze-day rules in a YAML config, and the app creates blocker calendar events so the whole team knows when deployments are restricted.
 
