@@ -286,13 +286,13 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
 }
 
 func autoSyncDashBadge(schedule string) string {
-	if schedule == db.SyncScheduleNone || schedule == "" {
-		return ""
-	}
 	label := map[string]string{
 		db.SyncScheduleWeekly:  "⏰ weekly",
 		db.SyncScheduleMonthly: "⏰ monthly",
 	}[schedule]
+	if label == "" {
+		return ""
+	}
 	return fmt.Sprintf(`<span style="padding:0.2rem 0.6rem;border-radius:999px;font-size:0.78rem;font-weight:600;background:#1e3a5f;color:#60a5fa;border:1px solid #1d4ed8">%s</span>`,
 		html.EscapeString(label))
 }
