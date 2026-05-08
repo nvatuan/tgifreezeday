@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	"github.com/nvat/tgifreezeday/internal/logging"
 	"github.com/nvat/tgifreezeday/internal/perm"
+	"github.com/nvat/tgifreezeday/internal/scheduler"
 	"github.com/nvat/tgifreezeday/internal/web/handler"
 )
 
@@ -63,6 +66,17 @@ func main() {
 		os.Getenv("POWER_USER_EMAIL_LIST"),
 		os.Getenv("WRITE_USER_EMAIL_LIST"),
 	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	schedTickerMin := 15
+	if v, err := strconv.Atoi(os.Getenv("SCHED_TICKER_FREQUENCY_MIN")); err == nil && v > 0 {
+		schedTickerMin = v
+	}
+
+	sched := scheduler.New(configs, tokens, oauthCfg, schedTickerMin)
+	go sched.Start(ctx)
 
 	authH := handler.NewAuthHandler(users, tokens, secret, httpsOnly, oauthCfg, basePath)
 	dashH := handler.NewDashboardHandler(configs, users, tokens, oauthCfg, basePath)

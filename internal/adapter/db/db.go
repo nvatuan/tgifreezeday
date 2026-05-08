@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -57,21 +58,38 @@ func migrate(db *sql.DB) error {
 			updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS configs (
-			id             INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			name           TEXT    NOT NULL,
-			schema_version TEXT    NOT NULL DEFAULT 'v1',
-			config_yaml    TEXT    NOT NULL,
-			status         TEXT    NOT NULL DEFAULT 'pending',
-			status_message TEXT    NOT NULL DEFAULT '',
-			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id               INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			name                  TEXT    NOT NULL,
+			schema_version        TEXT    NOT NULL DEFAULT 'v1',
+			config_yaml           TEXT    NOT NULL,
+			status                TEXT    NOT NULL DEFAULT 'pending',
+			status_message        TEXT    NOT NULL DEFAULT '',
+			created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			sync_schedule         TEXT    NOT NULL DEFAULT 'none',
+			next_sync_at          DATETIME,
+			last_auto_synced_at   DATETIME,
+			last_auto_sync_result TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_configs_user_id ON configs(user_id)`,
 	}
 
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("migration statement failed: %w", err)
+		}
+	}
+
+	// Additive column migrations for existing databases — ignore "duplicate column name" errors.
+	alterStmts := []string{
+		`ALTER TABLE configs ADD COLUMN sync_schedule TEXT NOT NULL DEFAULT 'none'`,
+		`ALTER TABLE configs ADD COLUMN next_sync_at DATETIME`,
+		`ALTER TABLE configs ADD COLUMN last_auto_synced_at DATETIME`,
+		`ALTER TABLE configs ADD COLUMN last_auto_sync_result TEXT`,
+	}
+	for _, stmt := range alterStmts {
+		if _, err := tx.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migration statement failed: %w", err)
 		}
 	}
