@@ -14,6 +14,7 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
+	"github.com/nvat/tgifreezeday/internal/domain"
 	"github.com/nvat/tgifreezeday/internal/logging"
 	"github.com/nvat/tgifreezeday/internal/perm"
 	"github.com/nvat/tgifreezeday/internal/scheduler"
@@ -419,25 +420,13 @@ func (h *ConfigHandler) runSync(ctx context.Context, userID int64, cfg *db.Confi
 		return err.Error(), true
 	}
 	rangeStart, rangeEnd := dateRange(appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
-	tgifMapping, err := repo.GetFreezeDaysInRange(rangeStart, rangeEnd)
-	if err != nil {
-		return "failed to get freeze days: " + err.Error(), true
-	}
-	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
-		return "failed to wipe existing blockers: " + err.Error(), true
-	}
-	summary := *appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary
-	description := *appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description
-	count := 0
-	for _, day := range *tgifMapping {
-		if day.IsTodayFreezeDay(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) {
-			if err := repo.WriteBlockerOnDate(day.Date, summary, description); err != nil {
-				return fmt.Sprintf("failed to write blocker on %s: %s", day.Date.Format("2006-01-02"), err.Error()), true
-			}
-			count++
-		}
-	}
-	return fmt.Sprintf("Sync complete. Created %d blocker event(s) across %d days checked.", count, len(*tgifMapping)), false
+	return domain.RunSync(
+		repo,
+		rangeStart, rangeEnd,
+		domain.TodayIsFreezeDayIf(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf),
+		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary,
+		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description,
+	)
 }
 
 func (h *ConfigHandler) runWipe(ctx context.Context, userID int64, cfg *db.Config) (string, bool) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,7 +70,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sched := scheduler.New(configs, tokens, oauthCfg)
+	schedTickerMin := 15
+	if v, err := strconv.Atoi(os.Getenv("SCHED_TICKER_FREQUENCY_MIN")); err == nil && v > 0 {
+		schedTickerMin = v
+	}
+
+	sched := scheduler.New(configs, tokens, oauthCfg, schedTickerMin)
 	go sched.Start(ctx)
 
 	authH := handler.NewAuthHandler(users, tokens, secret, httpsOnly, oauthCfg, basePath)

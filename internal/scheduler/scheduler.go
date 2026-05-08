@@ -8,6 +8,7 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/db"
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
+	"github.com/nvat/tgifreezeday/internal/domain"
 	"github.com/nvat/tgifreezeday/internal/logging"
 	"golang.org/x/oauth2"
 )
@@ -42,24 +43,34 @@ func NextSyncAt(schedule string, from time.Time) time.Time {
 }
 
 type Scheduler struct {
-	configs  *db.ConfigStore
-	tokens   *db.TokenStore
-	oauthCfg *oauth2.Config
+	configs       *db.ConfigStore
+	tokens        *db.TokenStore
+	oauthCfg      *oauth2.Config
+	tickerMinutes int
 }
 
-func New(configs *db.ConfigStore, tokens *db.TokenStore, oauthCfg *oauth2.Config) *Scheduler {
-	return &Scheduler{configs: configs, tokens: tokens, oauthCfg: oauthCfg}
+// New creates a Scheduler. tickerMinutes controls how often the scheduler polls
+// for due configs; set via SCHED_TICKER_FREQUENCY_MIN (default 15, must be > 0).
+func New(configs *db.ConfigStore, tokens *db.TokenStore, oauthCfg *oauth2.Config, tickerMinutes int) *Scheduler {
+	return &Scheduler{
+		configs:       configs,
+		tokens:        tokens,
+		oauthCfg:      oauthCfg,
+		tickerMinutes: tickerMinutes,
+	}
 }
 
 // Start runs the scheduler loop. It advances any past-due configs on startup,
-// then processes due configs every minute. Blocks until ctx is cancelled.
+// then polls for due configs on the configured interval. Blocks until ctx is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
 	log := logging.GetLogger()
+	log.WithField("ticker_minutes", s.tickerMinutes).Info("scheduler: starting")
+
 	if err := s.advancePastDue(); err != nil {
 		log.WithError(err).Warn("scheduler: failed to advance past-due configs on startup")
 	}
 
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(time.Duration(s.tickerMinutes) * time.Minute)
 	defer ticker.Stop()
 	for {
 		select {
@@ -90,9 +101,12 @@ func (s *Scheduler) advancePastDue() error {
 }
 
 func (s *Scheduler) tick(ctx context.Context, now time.Time) {
+	log := logging.GetLogger()
+	log.WithField("time", now.UTC().Format(time.RFC3339)).Debug("scheduler: tick")
+
 	due, err := s.configs.ListDueForAutoSync(now.UTC())
 	if err != nil {
-		logging.GetLogger().WithError(err).Error("scheduler: failed to query due configs")
+		log.WithError(err).Error("scheduler: failed to query due configs")
 		return
 	}
 	for _, cfg := range due {
@@ -142,25 +156,13 @@ func (s *Scheduler) runSync(ctx context.Context, cfg *db.Config) (string, bool) 
 		return err.Error(), true
 	}
 	rangeStart, rangeEnd := syncDateRange(appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
-	tgifMapping, err := repo.GetFreezeDaysInRange(rangeStart, rangeEnd)
-	if err != nil {
-		return "failed to get freeze days: " + err.Error(), true
-	}
-	if err := repo.WipeAllBlockersInRange(rangeStart, rangeEnd); err != nil {
-		return "failed to wipe existing blockers: " + err.Error(), true
-	}
-	summary := *appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary
-	description := *appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description
-	count := 0
-	for _, day := range *tgifMapping {
-		if day.IsTodayFreezeDay(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf) {
-			if err := repo.WriteBlockerOnDate(day.Date, summary, description); err != nil {
-				return fmt.Sprintf("failed to write blocker on %s: %s", day.Date.Format("2006-01-02"), err.Error()), true
-			}
-			count++
-		}
-	}
-	return fmt.Sprintf("Sync complete. Created %d blocker event(s) across %d days checked.", count, len(*tgifMapping)), false
+	return domain.RunSync(
+		repo,
+		rangeStart, rangeEnd,
+		domain.TodayIsFreezeDayIf(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf),
+		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary,
+		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description,
+	)
 }
 
 func parseAppConfig(yamlContent string) (*appconfig.Config, error) {

@@ -11,10 +11,18 @@ You will be a coding agent for me. Read the README.md and CONTRIBUTE.md to start
 - Always start from latest default branch, checkout to another branch.
 - Remember to work on a separate git worktree
 - Implement a feature first by writing test, then code from start to end such that the test succeeds, then run format or lint, finally test running the app locally.
+
+```bash
+golangci-lint run ./...
+gofmt -l .
+go test ./... -v
+```
+
 - Then, you create a PR on git remote origin
 - Then, start a subagent review the PR you create
 - Resolve the subagent feedbacks, making sure format lint and unit tests passing.
 - At last step, let me know when the PR is ready.
+- When adding new envvar, write validate code and update .env.sample
 
 ## Principle
 
