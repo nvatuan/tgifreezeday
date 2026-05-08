@@ -209,6 +209,25 @@ writeTo:
         endTime: "08:00"
 `
 
+const mockConfigYamlInvalidStartEqualsEnd = `
+shared:
+  lookbackDays: 20
+  lookaheadDays: 60
+readFrom:
+  googleCalendar:
+    countryCode: "jpn"
+    todayIsFreezeDayIf:
+      - today:
+        - isTheFirstBusinessDayOfTheMonth
+writeTo:
+  googleCalendar:
+    id: "example-freeze@example.com"
+    ifTodayIsFreezeDay:
+      default:
+        startTime: "10:00"
+        endTime: "10:00"
+`
+
 const mockConfigYamlInvalidUnsupportedCheck = `
 shared:
   lookbackDays: 20

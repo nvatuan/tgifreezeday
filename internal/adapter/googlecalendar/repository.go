@@ -224,8 +224,14 @@ func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description, st
 	// Convert to calendar timezone for proper display
 	calendarDate := date.In(r.calendarTZ)
 
-	parsedStart, _ := time.Parse("15:04", startTime)
-	parsedEnd, _ := time.Parse("15:04", endTime)
+	parsedStart, err := time.Parse("15:04", startTime)
+	if err != nil {
+		return fmt.Errorf("invalid startTime %q: %w", startTime, err)
+	}
+	parsedEnd, err := time.Parse("15:04", endTime)
+	if err != nil {
+		return fmt.Errorf("invalid endTime %q: %w", endTime, err)
+	}
 
 	startDateTime := time.Date(
 		calendarDate.Year(), calendarDate.Month(), calendarDate.Day(),
@@ -254,8 +260,7 @@ func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description, st
 		Description: finalDescription,
 	})
 
-	_, err := call.Do()
-	if err != nil {
+	if _, err := call.Do(); err != nil {
 		return fmt.Errorf("failed to write default blocker on date: %w", err)
 	}
 

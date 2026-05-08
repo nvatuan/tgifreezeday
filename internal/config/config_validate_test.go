@@ -77,6 +77,7 @@ func Test_ConfigValidate(t *testing.T) {
 		{name: "invalid_startTime_format", yaml: mockConfigYamlInvalidStartTimeFormat, want: nil},
 		{name: "invalid_endTime_format", yaml: mockConfigYamlInvalidEndTimeFormat, want: nil},
 		{name: "invalid_startTime_after_endTime", yaml: mockConfigYamlInvalidStartAfterEnd, want: nil},
+		{name: "invalid_startTime_equals_endTime", yaml: mockConfigYamlInvalidStartEqualsEnd, want: nil},
 	}
 
 	for _, test := range tests {
