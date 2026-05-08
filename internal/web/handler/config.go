@@ -900,6 +900,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 </div>
 
 %s
+`+pageFooterHTML()+`
 </body>
 </html>`,
 		escapedName, logoutForm(basePath),
@@ -1089,6 +1090,7 @@ document.getElementById('config-form').addEventListener('submit', function() {
   window.cmEditor.save();
 });
 </script>
+`+pageFooterHTML()+`
 </body>
 </html>`,
 		html.EscapeString(title),

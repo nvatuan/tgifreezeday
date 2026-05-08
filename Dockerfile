@@ -1,11 +1,16 @@
 FROM golang:1.25-alpine AS builder
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+
 RUN apk add --no-cache git
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o tgifreezeday ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+    -ldflags "-X github.com/nvat/tgifreezeday/internal/version.Version=${VERSION} -X github.com/nvat/tgifreezeday/internal/version.Commit=${COMMIT}" \
+    -o tgifreezeday ./cmd/server
 
 FROM alpine:latest
 

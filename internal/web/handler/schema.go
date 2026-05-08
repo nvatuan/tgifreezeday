@@ -86,6 +86,7 @@ func schemaRefHTML(basePath, version, yamlContent string) string {
   </p>
   <textarea id="schema-viewer" style="display:none">%s</textarea>
 </div>
+`+pageFooterHTML()+`
 </body>
 </html>`,
 		html.EscapeString(version),

@@ -270,6 +270,7 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
     %s
     %s
   </div>
+  `+pageFooterHTML()+`
 </body>
 </html>`,
 		html.EscapeString(greeting),

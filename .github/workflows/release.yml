@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        default: 'minor'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        run: |
+          latest=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+          else
+            # Strip leading 'v'
+            version="${latest#v}"
+            major=$(echo "$version" | cut -d. -f1)
+            minor=$(echo "$version" | cut -d. -f2)
+            patch=$(echo "$version" | cut -d. -f3)
+
+            case "${{ github.event.inputs.bump }}" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+            esac
+
+            next="v${major}.${minor}.${patch}"
+          fi
+
+          echo "tag=${next}" >> $GITHUB_OUTPUT
+          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "Next version: ${next}"
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.25'
+
+      - name: Build release binary
+        run: |
+          VERSION=${{ steps.version.outputs.tag }}
+          COMMIT=${{ steps.version.outputs.commit }}
+          CGO_ENABLED=0 go build \
+            -ldflags "-X github.com/nvat/tgifreezeday/internal/version.Version=${VERSION} -X github.com/nvat/tgifreezeday/internal/version.Commit=${COMMIT}" \
+            -o bin/tgifreezeday \
+            ./cmd/server
+
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${{ steps.version.outputs.tag }}
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            bin/tgifreezeday \
+            --title "$TAG" \
+            --generate-notes
