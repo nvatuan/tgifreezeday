@@ -2,13 +2,17 @@ BINARY_NAME=tgifreezeday
 MAIN_PATH=./cmd/server
 BIN_DIR=bin
 
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+LDFLAGS := -ldflags "-X github.com/nvat/tgifreezeday/internal/version.Version=$(VERSION) -X github.com/nvat/tgifreezeday/internal/version.Commit=$(COMMIT)"
+
 .PHONY: all
 all: build
 
 .PHONY: build
 build:
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BIN_DIR)/$(BINARY_NAME) $(MAIN_PATH)
+	go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 
 .PHONY: serve
 serve: build

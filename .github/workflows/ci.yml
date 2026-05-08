@@ -83,7 +83,10 @@ jobs:
       run: go test ./... -v
 
     - name: Build binary
-      run: go build -o bin/tgifreezeday ./cmd/server
+      run: |
+        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+        COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        go build -ldflags "-X github.com/nvat/tgifreezeday/internal/version.Version=${VERSION} -X github.com/nvat/tgifreezeday/internal/version.Commit=${COMMIT}" -o bin/tgifreezeday ./cmd/server
     
   docker:
     name: Build and Push Docker Image
@@ -128,4 +131,7 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         platforms: linux/amd64,linux/arm64
         cache-from: type=gha
-        cache-to: type=gha,mode=max 
+        cache-to: type=gha,mode=max
+        build-args: |
+          VERSION=${{ github.ref_name }}
+          COMMIT=${{ github.sha }}
