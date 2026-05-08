@@ -57,7 +57,7 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 	// Fetch current user's calendar names in one API call for display
 	calNames := map[string]string{}
 	if token, err := h.tokens.Get(currentUser.ID); err == nil && token != nil {
-		if cals, err := googlecalendar.ListWritableCalendars(r.Context(), h.oauthCfg, token); err == nil {
+		if cals, err := googlecalendar.ListWritableCalendars(r.Context(), h.oauthCfg, token, currentUser.ID, h.tokens); err == nil {
 			for _, c := range cals {
 				calNames[c.ID] = c.Summary
 			}

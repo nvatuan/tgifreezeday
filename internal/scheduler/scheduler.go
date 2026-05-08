@@ -127,7 +127,7 @@ func (s *Scheduler) runSync(ctx context.Context, cfg *db.Config) (string, bool) 
 	if token == nil {
 		return "no OAuth token for config owner — owner must log in", true
 	}
-	repo, err := googlecalendar.NewRepositoryWithToken(ctx, s.oauthCfg, token,
+	repo, err := googlecalendar.NewRepositoryWithToken(ctx, s.oauthCfg, token, cfg.UserID, s.tokens,
 		appCfg.ReadFrom.GoogleCalendar.CountryCode,
 		appCfg.WriteTo.GoogleCalendar.ID,
 	)
