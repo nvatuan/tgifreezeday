@@ -702,27 +702,29 @@ func autoSyncModalHTML(basePath string, cfg *db.Config, canEdit bool) string {
 		return ""
 	}
 	return fmt.Sprintf(`
-<dialog id="autosync-modal" style="max-width:480px;width:100%%;border-radius:0.75rem;padding:2rem;background:var(--pico-card-background-color);border:1px solid var(--pico-card-border-color);color:var(--pico-color)">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-    <strong style="font-size:1.1rem">⏰ Auto-Sync</strong>
-    <button type="button" onclick="document.getElementById('autosync-modal').close()" style="background:none;border:none;cursor:pointer;font-size:1.3rem;color:var(--pico-muted-color);padding:0;line-height:1">×</button>
-  </div>
-  <p style="font-size:0.88rem;color:var(--pico-muted-color);margin-bottom:1.25rem">
-    Auto-Sync automatically reads public holidays and writes blocker events to your calendar on a recurring schedule — no manual action needed.
-    When enabled, manual <strong>Sync</strong> and <strong>Wipe</strong> operations are disabled to prevent conflicts.
-  </p>
-  <form hx-post="`+basePath+`/configs/%d/auto-sync" hx-target="#autosync-modal-error" hx-swap="innerHTML">
-    <label for="modal-sync-schedule">Schedule
-      <select id="modal-sync-schedule" name="sync_schedule">
-        %s
-      </select>
-    </label>
-    <div id="autosync-modal-error" style="min-height:1.5rem;margin-top:0.5rem"></div>
-    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
-      <button type="button" class="outline secondary" onclick="document.getElementById('autosync-modal').close()">Cancel</button>
-      <button type="submit">Save</button>
+<dialog id="autosync-modal" style="max-width:480px;border-radius:0.75rem;background:var(--pico-card-background-color);border:1px solid var(--pico-card-border-color);color:var(--pico-color)">
+  <article>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <strong style="font-size:1.1rem">⏰ Auto-Sync</strong>
+      <button type="button" onclick="document.getElementById('autosync-modal').close()" style="background:none;border:none;cursor:pointer;font-size:1.3rem;color:var(--pico-muted-color);padding:0;line-height:1">×</button>
     </div>
-  </form>
+    <p style="font-size:0.88rem;color:var(--pico-muted-color);margin-bottom:1.25rem">
+      Auto-Sync automatically reads public holidays and writes blocker events to your calendar on a recurring schedule — no manual action needed.
+      When enabled, manual <strong>Sync</strong> and <strong>Wipe</strong> operations are disabled to prevent conflicts.
+    </p>
+    <form hx-post="`+basePath+`/configs/%d/auto-sync" hx-target="#autosync-modal-error" hx-swap="innerHTML">
+      <label for="modal-sync-schedule">Schedule
+        <select id="modal-sync-schedule" name="sync_schedule">
+          %s
+        </select>
+      </label>
+      <div id="autosync-modal-error" style="min-height:1.5rem;margin-top:0.5rem"></div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+        <button type="button" class="outline secondary" onclick="document.getElementById('autosync-modal').close()">Cancel</button>
+        <button type="submit">Save</button>
+      </div>
+    </form>
+  </article>
 </dialog>`,
 		cfg.ID, syncScheduleOptions(cfg.SyncSchedule))
 }
