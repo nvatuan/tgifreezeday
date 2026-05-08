@@ -56,7 +56,7 @@ func (h *ConfigHandler) fetchCalendars(ctx context.Context, userID int64) []*goo
 	if err != nil {
 		return nil
 	}
-	items, err := googlecalendar.ListWritableCalendars(ctx, h.oauthCfg, token)
+	items, err := googlecalendar.ListWritableCalendars(ctx, h.oauthCfg, token, userID, h.tokens)
 	if err != nil {
 		log.WithError(err).Warn("failed to list writable calendars for form")
 		return nil
@@ -403,7 +403,7 @@ func (h *ConfigHandler) validateConfig(ctx context.Context, userID int64, yamlCo
 	if err != nil {
 		return db.ConfigStatusInvalid, err.Error()
 	}
-	_, err = googlecalendar.NewRepositoryWithToken(ctx, h.oauthCfg, token,
+	_, err = googlecalendar.NewRepositoryWithToken(ctx, h.oauthCfg, token, userID, h.tokens,
 		appCfg.ReadFrom.GoogleCalendar.CountryCode,
 		appCfg.WriteTo.GoogleCalendar.ID,
 	)
@@ -436,7 +436,7 @@ func (h *ConfigHandler) buildRepo(ctx context.Context, userID int64, cfg *appcon
 	if err != nil {
 		return nil, err
 	}
-	return googlecalendar.NewRepositoryWithToken(ctx, h.oauthCfg, token,
+	return googlecalendar.NewRepositoryWithToken(ctx, h.oauthCfg, token, userID, h.tokens,
 		cfg.ReadFrom.GoogleCalendar.CountryCode,
 		cfg.WriteTo.GoogleCalendar.ID,
 	)

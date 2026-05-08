@@ -27,10 +27,12 @@ func NewRepositoryWithToken(
 	ctx context.Context,
 	oauthCfg *oauth2.Config,
 	token *oauth2.Token,
+	userID int64,
+	store TokenStore,
 	countryCode,
 	writeCalendarID string,
 ) (*Repository, error) {
-	httpClient := NewHTTPClientFromToken(ctx, oauthCfg, token)
+	httpClient := NewHTTPClientWithPersistence(ctx, oauthCfg, token, userID, store)
 
 	service, err := calendar.NewService(ctx, option.WithHTTPClient(httpClient))
 	if err != nil {

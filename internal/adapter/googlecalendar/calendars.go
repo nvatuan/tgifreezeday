@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
+
+	"golang.org/x/oauth2"
 )
 
 // CalendarItem represents a calendar the user can write to.
@@ -16,8 +17,8 @@ type CalendarItem struct {
 }
 
 // ListWritableCalendars returns all calendars where the user has owner or writer access.
-func ListWritableCalendars(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token) ([]*CalendarItem, error) {
-	client := cfg.Client(ctx, token)
+func ListWritableCalendars(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, userID int64, store TokenStore) ([]*CalendarItem, error) {
+	client := NewHTTPClientWithPersistence(ctx, cfg, token, userID, store)
 	svc, err := calendar.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create calendar service: %w", err)
