@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/nvat/tgifreezeday/internal/consts"
 )
@@ -130,5 +131,25 @@ func (c *Config) SetDefaultAndValidateWriteToGoogleCalendarIfTodayIsFreezeDay() 
 		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.description cannot be longer than 8000 characters")
 	}
 
+	startT, err := parseHHMM(*c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime)
+	if err != nil {
+		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.startTime: %w", err)
+	}
+	endT, err := parseHHMM(*c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime)
+	if err != nil {
+		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.endTime: %w", err)
+	}
+	if !startT.Before(endT) {
+		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.startTime must be before endTime")
+	}
+
 	return nil
+}
+
+func parseHHMM(s string) (time.Time, error) {
+	t, err := time.Parse("15:04", s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%q is not a valid HH:MM time", s)
+	}
+	return t, nil
 }

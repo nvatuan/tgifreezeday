@@ -38,6 +38,8 @@ type IfTodayIsFreezeDayConfig struct {
 type DefaultConfig struct {
 	Summary     *string `yaml:"summary"`
 	Description *string `yaml:"description"`
+	StartTime   *string `yaml:"startTime"`
+	EndTime     *string `yaml:"endTime"`
 }
 
 type Config struct {
@@ -65,5 +67,11 @@ func (c *Config) SetDefault() {
 	}
 	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description == nil {
 		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description = helpers.StringPtr(defaultDescription)
+	}
+	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime == nil {
+		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime = helpers.StringPtr("08:00")
+	}
+	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime == nil {
+		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime = helpers.StringPtr("20:00")
 	}
 }

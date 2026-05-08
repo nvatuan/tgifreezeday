@@ -85,13 +85,15 @@ writeTo:
 
     # what to do if today is Freeze day
     ifTodayIsFreezeDay:
-      # Modifying the default blocker event: change summary and description.
+      # Modifying the default blocker event: change summary, description, and time window.
       # Description supports html tags (this is Google Cal feature, we just reuse it, it may change though we don't guarantee support)
       default:
         summary: "🚫 PRODUCTION FREEZE - No Deployments"
         description: |
           Production operations restricted today.<br>
           <a href="https://wiki.company.com/freeze-policy">Freeze Policy</a>
+        startTime: "08:00"  # optional, HH:MM format, default "08:00"
+        endTime: "20:00"    # optional, HH:MM format, default "20:00"
 ```
 
 ### Freeze Day Rules
