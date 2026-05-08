@@ -85,6 +85,7 @@ func (h *DashboardHandler) HandleDashboard(w http.ResponseWriter, r *http.Reques
 			Name:         c.Name,
 			Schema:       c.SchemaVersion,
 			Status:       c.Status,
+			SyncSchedule: c.SyncSchedule,
 			Author:       author,
 			CalendarID:   calID,
 			CalendarName: calDisplay,
@@ -117,6 +118,7 @@ type dashRow struct {
 	Name         string
 	Schema       string
 	Status       db.ConfigStatus
+	SyncSchedule string
 	Author       string
 	CalendarID   string
 	CalendarName string
@@ -198,6 +200,7 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
 	} else {
 		for _, r := range rows {
 			badge := statusBadge(r.Status)
+			autoSyncBadge := autoSyncDashBadge(r.SyncSchedule)
 			calDisplay := r.CalendarName
 			if calDisplay == "" {
 				calDisplay = r.CalendarID
@@ -217,6 +220,7 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
     <strong style="font-size:1rem"><a href="`+basePath+`/configs/%d" style="text-decoration:none">%s</a></strong>
     <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
       %s
+      %s
       <a href="`+basePath+`/configs/%d" role="button" class="outline" style="padding:0.2rem 0.6rem;font-size:0.82rem;margin:0">View</a>
       %s
     </div>
@@ -225,6 +229,7 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
 </article>`,
 				r.ID, html.EscapeString(trunc(r.Name, 50)),
 				badge,
+				autoSyncBadge,
 				r.ID,
 				editBtn,
 				meta)
@@ -278,6 +283,20 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
 			return ""
 		}(),
 		filterBar, cards)
+}
+
+func autoSyncDashBadge(schedule string) string {
+	type entry struct{ label, style string }
+	m := map[string]entry{
+		db.SyncScheduleWeekly:  {"⏰ weekly", "background:#1e3a5f;color:#60a5fa;border:1px solid #1d4ed8"},
+		db.SyncScheduleMonthly: {"⏰ monthly", "background:#1e3a5f;color:#60a5fa;border:1px solid #1d4ed8"},
+	}
+	e, ok := m[schedule]
+	if !ok {
+		e = entry{"⏰ off", "background:#1f2937;color:#6b7280;border:1px solid #374151"}
+	}
+	return fmt.Sprintf(`<span style="padding:0.2rem 0.6rem;border-radius:999px;font-size:0.78rem;font-weight:600;%s">%s</span>`,
+		e.style, html.EscapeString(e.label))
 }
 
 func statusBadge(status db.ConfigStatus) string {

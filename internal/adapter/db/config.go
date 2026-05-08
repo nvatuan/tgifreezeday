@@ -203,6 +203,16 @@ func (s *ConfigStore) Update(id, userID int64, name, configYAML, syncSchedule st
 	return err
 }
 
+// UpdateSyncSchedule updates only the sync schedule fields without touching status or config YAML.
+func (s *ConfigStore) UpdateSyncSchedule(id, userID int64, schedule string, nextSyncAt *time.Time) error {
+	_, err := s.db.Exec(`
+		UPDATE configs
+		SET sync_schedule = ?, next_sync_at = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND user_id = ?
+	`, schedule, nextSyncAt, id, userID)
+	return err
+}
+
 func (s *ConfigStore) UpdateStatus(id int64, status ConfigStatus, message string) error {
 	_, err := s.db.Exec(`
 		UPDATE configs SET status = ?, status_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
