@@ -215,15 +215,6 @@ func (s *ConfigStore) Delete(id, userID int64) error {
 	return err
 }
 
-// UpdateNextSyncAt advances next_sync_at without touching other fields.
-func (s *ConfigStore) UpdateNextSyncAt(id int64, nextSyncAt time.Time) error {
-	_, err := s.db.Exec(`UPDATE configs SET next_sync_at = ? WHERE id = ?`, nextSyncAt, id)
-	if err != nil {
-		return fmt.Errorf("update next_sync_at: %w", err)
-	}
-	return nil
-}
-
 // ListDueForAutoSync returns configs whose auto-sync schedule is due (next_sync_at <= now).
 func (s *ConfigStore) ListDueForAutoSync(now time.Time) ([]*Config, error) {
 	rows, err := s.db.Query(`
