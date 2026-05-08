@@ -832,7 +832,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
     pre[class*="language-"] { line-height: 1.5 !important; white-space: pre-wrap; word-break: break-word; font-size: 0.84rem; border-radius: 0.5rem; }
     .line-numbers .line-numbers-rows > span::before { line-height: 1.5; }
     #blockers-panel pre { margin-top: 0.5rem; }
-    #autosync-modal { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); margin:0; }
+    #autosync-modal { position:fixed; top:50%%; left:50%%; transform:translate(-50%%,-50%%); margin:0; }
     #autosync-modal::backdrop { background:rgba(0,0,0,0.6); }
   </style>
   <script>
