@@ -60,15 +60,12 @@ func New(configs *db.ConfigStore, tokens *db.TokenStore, oauthCfg *oauth2.Config
 	}
 }
 
-// Start runs the scheduler loop. It advances any past-due configs on startup,
-// then polls for due configs on the configured interval. Blocks until ctx is cancelled.
+// Start runs the scheduler loop. On startup any configs whose next_sync_at is
+// already in the past are picked up on the first tick and synced immediately.
+// Blocks until ctx is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
 	log := logging.GetLogger()
 	log.WithField("ticker_minutes", s.tickerMinutes).Info("scheduler: starting")
-
-	if err := s.advancePastDue(); err != nil {
-		log.WithError(err).Warn("scheduler: failed to advance past-due configs on startup")
-	}
 
 	ticker := time.NewTicker(time.Duration(s.tickerMinutes) * time.Minute)
 	defer ticker.Stop()
@@ -80,24 +77,6 @@ func (s *Scheduler) Start(ctx context.Context) {
 			s.tick(ctx, t)
 		}
 	}
-}
-
-// advancePastDue moves next_sync_at forward for any configs that are overdue at startup,
-// implementing the "missed windows are silently skipped" behaviour.
-func (s *Scheduler) advancePastDue() error {
-	now := time.Now().UTC()
-	due, err := s.configs.ListDueForAutoSync(now)
-	if err != nil {
-		return err
-	}
-	log := logging.GetLogger()
-	for _, cfg := range due {
-		next := NextSyncAt(cfg.SyncSchedule, now)
-		if err := s.configs.UpdateNextSyncAt(cfg.ID, next); err != nil {
-			log.WithError(err).WithField("config_id", cfg.ID).Warn("scheduler: failed to advance past-due config")
-		}
-	}
-	return nil
 }
 
 func (s *Scheduler) tick(ctx context.Context, now time.Time) {
