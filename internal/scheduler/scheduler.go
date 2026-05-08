@@ -12,25 +12,28 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// jst is the fixed UTC+9 timezone used for all schedule calculations.
-var jst = time.FixedZone("JST", 9*60*60)
+// JST is the fixed UTC+9 timezone used for all schedule calculations.
+// Exported so callers (e.g. the UI layer) can format timestamps consistently
+// without duplicating the timezone definition.
+// JST has no DST, so +24h arithmetic is always safe here.
+var JST = time.FixedZone("JST", 9*60*60)
 
 // NextSyncAt returns the next scheduled time strictly after `from` for the given schedule.
 // weekly  → every Monday 09:00 JST
 // monthly → 1st of every month 09:00 JST
 func NextSyncAt(schedule string, from time.Time) time.Time {
-	fromJST := from.In(jst)
+	fromJST := from.In(JST)
 	switch schedule {
 	case db.SyncScheduleWeekly:
-		target := time.Date(fromJST.Year(), fromJST.Month(), fromJST.Day(), 9, 0, 0, 0, jst)
+		target := time.Date(fromJST.Year(), fromJST.Month(), fromJST.Day(), 9, 0, 0, 0, JST)
 		for target.Weekday() != time.Monday || !target.After(from) {
 			target = target.Add(24 * time.Hour)
 		}
 		return target.UTC()
 	case db.SyncScheduleMonthly:
-		target := time.Date(fromJST.Year(), fromJST.Month(), 1, 9, 0, 0, 0, jst)
+		target := time.Date(fromJST.Year(), fromJST.Month(), 1, 9, 0, 0, 0, JST)
 		for !target.After(from) {
-			target = time.Date(target.Year(), target.Month()+1, 1, 9, 0, 0, 0, jst)
+			target = time.Date(target.Year(), target.Month()+1, 1, 9, 0, 0, 0, JST)
 		}
 		return target.UTC()
 	default:
@@ -99,9 +102,13 @@ func (s *Scheduler) tick(ctx context.Context, now time.Time) {
 
 func (s *Scheduler) syncConfig(ctx context.Context, cfg *db.Config) {
 	log := logging.GetLogger().WithField("config_id", cfg.ID)
-	syncedAt := time.Now().UTC()
 
 	msg, isErr := s.runSync(ctx, cfg)
+	// Capture time AFTER runSync so next_sync_at is computed from the actual
+	// completion time, not the start time (avoids re-firing immediately when sync
+	// takes long enough to straddle a schedule boundary).
+	syncedAt := time.Now().UTC()
+
 	prefix := "✅ "
 	if isErr {
 		prefix = "❌ "

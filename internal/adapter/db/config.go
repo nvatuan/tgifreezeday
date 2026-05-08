@@ -53,9 +53,7 @@ const configSelectCols = `id, user_id, name, schema_version, config_yaml,
 	status, status_message, created_at, updated_at,
 	sync_schedule, next_sync_at, last_auto_synced_at, last_auto_sync_result`
 
-func scanConfig(row interface {
-	Scan(dest ...any) error
-}) (*Config, error) {
+func scanConfig(row interface{ Scan(dest ...any) error }) (*Config, error) {
 	c := &Config{}
 	var nextSyncAt sql.NullTime
 	var lastAutoSyncedAt sql.NullTime
@@ -220,7 +218,10 @@ func (s *ConfigStore) Delete(id, userID int64) error {
 // UpdateNextSyncAt advances next_sync_at without touching other fields.
 func (s *ConfigStore) UpdateNextSyncAt(id int64, nextSyncAt time.Time) error {
 	_, err := s.db.Exec(`UPDATE configs SET next_sync_at = ? WHERE id = ?`, nextSyncAt, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("update next_sync_at: %w", err)
+	}
+	return nil
 }
 
 // ListDueForAutoSync returns configs whose auto-sync schedule is due (next_sync_at <= now).
