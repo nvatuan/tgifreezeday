@@ -8,6 +8,8 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
+
+	"github.com/nvat/tgifreezeday/internal/logging"
 )
 
 const (
@@ -58,7 +60,9 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 		return nil, err
 	}
 	if t.AccessToken != p.current.AccessToken {
-		_ = p.store.Upsert(p.userID, t)
+		if err := p.store.Upsert(p.userID, t); err != nil {
+			logging.GetLogger().WithError(err).Warn("failed to persist refreshed OAuth token")
+		}
 		p.current = t
 	}
 	return t, nil
