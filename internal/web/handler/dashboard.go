@@ -286,15 +286,17 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
 }
 
 func autoSyncDashBadge(schedule string) string {
-	label := map[string]string{
-		db.SyncScheduleWeekly:  "⏰ weekly",
-		db.SyncScheduleMonthly: "⏰ monthly",
-	}[schedule]
-	if label == "" {
-		return ""
+	type entry struct{ label, style string }
+	m := map[string]entry{
+		db.SyncScheduleWeekly:  {"⏰ weekly", "background:#1e3a5f;color:#60a5fa;border:1px solid #1d4ed8"},
+		db.SyncScheduleMonthly: {"⏰ monthly", "background:#1e3a5f;color:#60a5fa;border:1px solid #1d4ed8"},
 	}
-	return fmt.Sprintf(`<span style="padding:0.2rem 0.6rem;border-radius:999px;font-size:0.78rem;font-weight:600;background:#1e3a5f;color:#60a5fa;border:1px solid #1d4ed8">%s</span>`,
-		html.EscapeString(label))
+	e, ok := m[schedule]
+	if !ok {
+		e = entry{"⏰ off", "background:#1f2937;color:#6b7280;border:1px solid #374151"}
+	}
+	return fmt.Sprintf(`<span style="padding:0.2rem 0.6rem;border-radius:999px;font-size:0.78rem;font-weight:600;%s">%s</span>`,
+		e.style, html.EscapeString(e.label))
 }
 
 func statusBadge(status db.ConfigStatus) string {
