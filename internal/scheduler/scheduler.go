@@ -141,6 +141,8 @@ func (s *Scheduler) runSync(ctx context.Context, cfg *db.Config) (string, bool) 
 		domain.TodayIsFreezeDayIf(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf),
 		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary,
 		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description,
+		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime,
+		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime,
 	)
 }
 

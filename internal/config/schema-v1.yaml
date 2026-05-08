@@ -51,3 +51,15 @@ fields:
     required: false
     maxLength: 8000
     description: Event description, HTML supported (default provided if omitted)
+
+  writeTo.googleCalendar.ifTodayIsFreezeDay.default.startTime:
+    type: string
+    required: false
+    format: "HH:MM"
+    description: Event start time in HH:MM format (default "08:00"). Must be before endTime.
+
+  writeTo.googleCalendar.ifTodayIsFreezeDay.default.endTime:
+    type: string
+    required: false
+    format: "HH:MM"
+    description: Event end time in HH:MM format (default "20:00"). Must be after startTime.

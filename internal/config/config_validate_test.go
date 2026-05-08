@@ -41,6 +41,14 @@ func configsEqual(a, b *Config) bool {
 		return false
 	}
 
+	if !stringPtrsEqual(aDefault.StartTime, bDefault.StartTime) {
+		return false
+	}
+
+	if !stringPtrsEqual(aDefault.EndTime, bDefault.EndTime) {
+		return false
+	}
+
 	return true
 }
 
@@ -62,9 +70,14 @@ func Test_ConfigValidate(t *testing.T) {
 		want *Config
 	}{
 		{name: "valid", yaml: mockConfigYamlValid, want: mockValidParsedConfig},
+		{name: "valid_custom_times", yaml: mockConfigYamlCustomTimes, want: mockCustomTimesParsedConfig},
 		{name: "invalid_countryCode", yaml: mockConfigYamlInvalidCountryCode, want: nil},
 		{name: "invalid_unsupportedDate", yaml: mockConfigYamlInvalidUnsupportedDate, want: nil},
 		{name: "invalid_unsupportedCheck", yaml: mockConfigYamlInvalidUnsupportedCheck, want: nil},
+		{name: "invalid_startTime_format", yaml: mockConfigYamlInvalidStartTimeFormat, want: nil},
+		{name: "invalid_endTime_format", yaml: mockConfigYamlInvalidEndTimeFormat, want: nil},
+		{name: "invalid_startTime_after_endTime", yaml: mockConfigYamlInvalidStartAfterEnd, want: nil},
+		{name: "invalid_startTime_equals_endTime", yaml: mockConfigYamlInvalidStartEqualsEnd, want: nil},
 	}
 
 	for _, test := range tests {

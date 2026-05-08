@@ -458,6 +458,8 @@ func (h *ConfigHandler) runSync(ctx context.Context, userID int64, cfg *db.Confi
 		domain.TodayIsFreezeDayIf(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf),
 		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary,
 		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description,
+		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime,
+		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime,
 	)
 }
 

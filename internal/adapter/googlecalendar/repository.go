@@ -104,8 +104,6 @@ func (r *Repository) GetFreezeDaysInRange(rangeStart, rangeEnd time.Time) (*doma
 }
 
 const (
-	defaultStartHour          = 8  // local time
-	defaultEndHour            = 20 // local time
 	defaultBlockerSignature   = "Managed by tgifreezeday, do not modify."
 	defaultBlockerDescription = "" + defaultBlockerSignature
 )
@@ -222,18 +220,27 @@ func (r *Repository) ListAllBlockersInRange(startDate, endDate time.Time) ([]*Bl
 	return blockers, nil
 }
 
-func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description string) error {
+func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description, startTime, endTime string) error {
 	// Convert to calendar timezone for proper display
 	calendarDate := date.In(r.calendarTZ)
 
+	parsedStart, err := time.Parse("15:04", startTime)
+	if err != nil {
+		return fmt.Errorf("invalid startTime %q: %w", startTime, err)
+	}
+	parsedEnd, err := time.Parse("15:04", endTime)
+	if err != nil {
+		return fmt.Errorf("invalid endTime %q: %w", endTime, err)
+	}
+
 	startDateTime := time.Date(
 		calendarDate.Year(), calendarDate.Month(), calendarDate.Day(),
-		defaultStartHour, 0, 0, 0,
+		parsedStart.Hour(), parsedStart.Minute(), 0, 0,
 		r.calendarTZ)
 
 	endDateTime := time.Date(
 		calendarDate.Year(), calendarDate.Month(), calendarDate.Day(),
-		defaultEndHour, 0, 0, 0,
+		parsedEnd.Hour(), parsedEnd.Minute(), 0, 0,
 		r.calendarTZ)
 
 	// Combine custom description with signature for identification
@@ -253,8 +260,7 @@ func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description str
 		Description: finalDescription,
 	})
 
-	_, err := call.Do()
-	if err != nil {
+	if _, err := call.Do(); err != nil {
 		return fmt.Errorf("failed to write default blocker on date: %w", err)
 	}
 
