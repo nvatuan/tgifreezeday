@@ -712,7 +712,8 @@ func autoSyncModalHTML(basePath string, cfg *db.Config, canEdit bool) string {
       Auto-Sync automatically reads public holidays and writes blocker events to your calendar on a recurring schedule — no manual action needed.
       When enabled, manual <strong>Sync</strong> and <strong>Wipe</strong> operations are disabled to prevent conflicts.
     </p>
-    <form hx-post="`+basePath+`/configs/%d/auto-sync" hx-target="#autosync-modal-error" hx-swap="innerHTML">
+    <form hx-post="`+basePath+`/configs/%d/auto-sync" hx-target="#autosync-modal-error" hx-swap="innerHTML"
+          hx-on::htmx:response-error="document.getElementById('autosync-modal-error').textContent='Save failed ('+event.detail.xhr.status+') — please try again'">
       <label for="modal-sync-schedule">Schedule
         <select id="modal-sync-schedule" name="sync_schedule">
           %s
