@@ -114,6 +114,7 @@ func main() {
 	mux.Handle("POST "+basePath+"/configs/{id}/validate", requireAuth(http.HandlerFunc(cfgH.HandleValidate)))
 	mux.Handle("POST "+basePath+"/configs/{id}/sync", requireAuth(http.HandlerFunc(cfgH.HandleSync)))
 	mux.Handle("POST "+basePath+"/configs/{id}/wipe", requireAuth(http.HandlerFunc(cfgH.HandleWipe)))
+	mux.Handle("POST "+basePath+"/configs/{id}/auto-sync", requireAuth(http.HandlerFunc(cfgH.HandleUpdateAutoSync)))
 	mux.Handle("GET "+basePath+"/configs/{id}/blockers", requireAuth(http.HandlerFunc(cfgH.HandleListBlockers)))
 
 	// Schema reference (public — no auth needed, no secrets exposed)

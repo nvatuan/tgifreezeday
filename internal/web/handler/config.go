@@ -313,6 +313,38 @@ func (h *ConfigHandler) HandleWipe(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, actionResultHTML("Wipe", msg, isErr)) //nolint:errcheck
 }
 
+// HandleUpdateAutoSync updates only the sync_schedule for a config. Returns HX-Redirect to the detail page.
+func (h *ConfigHandler) HandleUpdateAutoSync(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	id, ok := idFromPath(r)
+	if !ok {
+		httpError(w, http.StatusBadRequest, "invalid config id")
+		return
+	}
+	cfg, err := h.getConfig(r.Context(), id, user.ID)
+	if err != nil || cfg == nil {
+		httpError(w, http.StatusNotFound, "config not found")
+		return
+	}
+	if role := roleFromContext(r.Context()); !role.CanEditConfig(cfg.UserID, user.ID) {
+		httpError(w, http.StatusForbidden, "you do not have permission to edit this config")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<10) // 1 KB — only one small field
+	if err := r.ParseForm(); err != nil {
+		httpError(w, http.StatusBadRequest, "invalid form")
+		return
+	}
+	newSchedule := parseSyncSchedule(r.FormValue("sync_schedule"))
+	nextSyncAt := computeNextSyncAt(cfg.SyncSchedule, cfg.NextSyncAt, newSchedule)
+	if err := h.configs.Update(id, cfg.UserID, cfg.Name, cfg.ConfigYAML, newSchedule, nextSyncAt); err != nil {
+		httpError(w, http.StatusInternalServerError, "failed to update auto-sync")
+		return
+	}
+	w.Header().Set("HX-Redirect", fmt.Sprintf(h.basePath+"/configs/%d", id))
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // HandleListBlockers returns a blockers table partial (HTMX).
 func (h *ConfigHandler) HandleListBlockers(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
@@ -644,6 +676,73 @@ func autoSyncInfoHTML(cfg *db.Config) string {
 </div>`, html.EscapeString(scheduleLabel), lastSyncHTML, nextSyncHTML)
 }
 
+func autoSyncTriggerHTML(basePath string, cfg *db.Config, canEdit bool) string {
+	scheduleLabel := map[string]string{
+		db.SyncScheduleNone:    "off",
+		db.SyncScheduleWeekly:  "weekly",
+		db.SyncScheduleMonthly: "monthly",
+	}[cfg.SyncSchedule]
+	if scheduleLabel == "" {
+		scheduleLabel = "off"
+	}
+
+	style := "border-bottom:1px dotted currentColor;cursor:pointer;color:#60a5fa;background:none;border-top:none;border-left:none;border-right:none;padding:0;font-size:inherit;font-family:inherit"
+	if !canEdit {
+		style = "border-bottom:1px dotted currentColor;cursor:default;color:#60a5fa;background:none;border-top:none;border-left:none;border-right:none;padding:0;font-size:inherit;font-family:inherit"
+	}
+
+	onClick := ""
+	if canEdit {
+		onClick = `onclick="document.getElementById('autosync-modal').showModal()"`
+	}
+
+	return fmt.Sprintf(` &nbsp;·&nbsp; Auto Sync: <span id="autosync-trigger"><button type="button" style="%s" title="Configure Auto-Sync" %s>%s</button></span>`,
+		style, onClick, html.EscapeString(scheduleLabel))
+}
+
+func autoSyncModalHTML(basePath string, cfg *db.Config, canEdit bool) string {
+	if !canEdit {
+		return ""
+	}
+	return fmt.Sprintf(`
+<dialog id="autosync-modal" style="max-width:480px;width:100%%;border-radius:0.75rem;padding:2rem;background:var(--pico-card-background-color);border:1px solid var(--pico-card-border-color);color:var(--pico-color)">
+  <article style="margin:0;padding:0;border:none;background:none">
+    <header style="margin-bottom:1rem;padding:0;border:none">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <strong style="font-size:1.1rem">⏰ Auto-Sync</strong>
+        <button type="button" onclick="document.getElementById('autosync-modal').close()" style="background:none;border:none;cursor:pointer;font-size:1.3rem;color:var(--pico-muted-color);padding:0;line-height:1">×</button>
+      </div>
+    </header>
+    <p style="font-size:0.88rem;color:var(--pico-muted-color);margin-bottom:1.25rem">
+      Auto-Sync automatically reads public holidays and writes blocker events to your calendar on a recurring schedule — no manual action needed.
+      When enabled, manual <strong>Sync</strong> and <strong>Wipe</strong> operations are disabled to prevent conflicts.
+    </p>
+    <form hx-post="`+basePath+`/configs/%d/auto-sync" hx-target="body" hx-swap="none">
+      <label for="modal-sync-schedule">Schedule
+        <select id="modal-sync-schedule" name="sync_schedule">
+          %s
+        </select>
+      </label>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.25rem">
+        <button type="button" class="outline secondary" onclick="document.getElementById('autosync-modal').close()">Cancel</button>
+        <button type="submit">Save</button>
+      </div>
+    </form>
+  </article>
+</dialog>
+<script>
+  document.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath && evt.detail.pathInfo.requestPath.endsWith('/auto-sync')) {
+      if (evt.detail.xhr.status >= 200 && evt.detail.xhr.status < 300) {
+        var redirect = evt.detail.xhr.getResponseHeader('HX-Redirect');
+        if (redirect) { window.location.href = redirect; }
+      }
+    }
+  });
+</script>`,
+		cfg.ID, syncScheduleOptions(cfg.SyncSchedule))
+}
+
 func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role perm.Role) string {
 	badge := statusBadgeHTML(cfg.Status, cfg.StatusMessage)
 	escapedName := html.EscapeString(cfg.Name)
@@ -707,11 +806,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 		syncActionsHTML = validateBtn + syncBtn + wipeBtn
 	}
 
-	autoSyncBadge := ""
-	if autoSyncEnabled {
-		autoSyncBadge = fmt.Sprintf(` &nbsp;·&nbsp; <strong style="color:#60a5fa">⏰ auto-sync: %s</strong>`,
-			html.EscapeString(cfg.SyncSchedule))
-	}
+	autoSyncTrigger := autoSyncTriggerHTML(basePath, cfg, canEdit)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -812,15 +907,18 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 
   <div id="blockers-panel" style="margin-top:1.5rem"></div>
 </div>
+
+%s
 </body>
 </html>`,
 		escapedName, logoutForm(basePath),
 		escapedName,
 		escapedName, editBtnHTML,
-		escapedSchema, badge, autoSyncBadge,
+		escapedSchema, badge, autoSyncTrigger,
 		autoSyncInfoHTML(cfg),
 		syncActionsHTML, cfg.ID,
 		escapedYAML,
+		autoSyncModalHTML(basePath, cfg, canEdit),
 	)
 }
 
