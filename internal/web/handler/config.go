@@ -770,7 +770,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 </head>
 <body>
 <nav class="topnav">
-  <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
+  <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️👉🧊🗓️ TGI Freeze Day</a>
   <div>%s</div>
 </nav>
 <div class="page-content">
@@ -957,7 +957,7 @@ writeTo:
 </head>
 <body>
 <nav class="topnav">
-  <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️🧊🗓️ TGI Freeze Day</a>
+  <a href="`+basePath+`/dashboard" class="brand">🙏🧔🏽‍♀️👉🧊🗓️ TGI Freeze Day</a>
   <div>%s</div>
 </nav>
 <div class="page-content">

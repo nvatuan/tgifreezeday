@@ -9,19 +9,26 @@ The project follows Go best practices with clean architecture:
 ```
 .
 ├── cmd/
-│   └── tgifreezeday/        # Main application entry point
-│       └── main.go          # CLI commands (sync, wipe-blockers, list-blockers)
+│   └── server/              # Main application entry point (HTTP server)
+│       └── main.go          # Server setup, routing, env var validation
 ├── internal/
 │   ├── adapter/
+│   │   ├── db/              # SQLite persistence (users, OAuth tokens, configs)
 │   │   └── googlecalendar/  # Google Calendar API implementation
-│   ├── config/              # Configuration loading and validation
+│   ├── config/              # Config YAML loading and validation
 │   ├── consts/              # Constants (supported countries, etc.)
 │   ├── domain/              # Core business logic and models
 │   ├── helpers/             # Utility functions
-│   └── logging/             # Structured logging setup
+│   ├── logging/             # Structured logging setup
+│   ├── perm/                # Role-based access control (Power/Write/ReadOnly)
+│   ├── session/             # HTTP session management (signed cookies)
+│   └── web/
+│       └── handler/         # HTTP handlers (auth, dashboard, config, schema)
+├── k8s/                     # Kubernetes manifests (StatefulSet, Service, Ingress, PVC)
 ├── docs/                    # Documentation and images
 ├── .github/workflows/       # CI/CD pipeline (lint, test, build, deploy)
-├── config.yaml              # Application configuration
+├── .env.example             # Example environment variable file
+├── config.yaml              # Example application config
 ├── Dockerfile               # Multi-platform container build
 └── Makefile                 # Development commands
 ```
@@ -30,57 +37,69 @@ The project follows Go best practices with clean architecture:
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.25+
 - Google Calendar API access
-- OAuth 2.0 Client ID credentials (Desktop app type) from Google Cloud Console
+- OAuth 2.0 Client ID credentials (**Web application** type) from Google Cloud Console
 
 ### Configuration
 
 #### Google OAuth credentials
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
-2. Create an **OAuth 2.0 Client ID** with application type **Desktop app**
-3. Enable the **Google Calendar API** in your project
-4. Copy the Client ID and Client Secret from the credentials page
+2. Create an **OAuth 2.0 Client ID** with application type **Web application**
+3. Add your redirect URI to **Authorized redirect URIs** (e.g. `http://localhost:8080/oauth/callback`)
+4. Enable the **Google Calendar API** in your project
+5. Copy the Client ID and Client Secret from the credentials page
 
-Set the following environment variables:
+#### Environment variables
+
+Copy `.env.example` to `.env` and fill in the values:
 
 ```bash
-export GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
-export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+# Required
+GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+GOOGLE_OAUTH_REDIRECT_URL=http://localhost:8080/oauth/callback
+SESSION_SECRET=replace-with-32-plus-random-chars
+
+# Optional (defaults shown)
+PORT=8080
+DB_PATH=./tgifreezeday.db
+LOG_LEVEL=info
+LOG_FORMAT=json
+HTTPS_ONLY=false   # set true in production to add Secure flag to cookies
+BASE_PATH=         # set to sub-path prefix if behind a reverse proxy (e.g. /tgifreezeday)
+
+# Access control — comma-separated email lists
+POWER_USER_EMAIL_LIST=admin@example.com           # full access: create/edit/delete any config
+WRITE_USER_EMAIL_LIST=dev@example.com,ops@example.com  # create + manage own configs
+                                                       # all other authenticated users: read-only
 ```
 
-**First run:** a browser window opens for you to log in and grant calendar access. The resulting token is cached at `~/.config/tgifreezeday/token.json` (macOS: `~/Library/Application Support/tgifreezeday/token.json`). Subsequent runs use the cached token and refresh it automatically.
+**Auth flow:** users log in via "Sign in with Google" in the browser. OAuth tokens and sessions are stored in the SQLite database (`DB_PATH`). There is no local token cache file.
 
-To override the token cache location:
-```bash
-export GOOGLE_OAUTH_TOKEN_CACHE_PATH=/path/to/token.json
-```
+#### Access control
 
-To reset authorization (e.g. switch accounts), delete the token cache and re-run.
-
-- Set `LOG_LEVEL` to control logging verbosity (debug, info, warn, error, fatal, panic). Default: info
-- Set `LOG_FORMAT` to control log output format (json, text, colored). Default: json
-- Optionally set `CONFIG_PATH` to your YAML config file
-- See example config in README above
+| Role | Permissions |
+|------|-------------|
+| **Power** (`POWER_USER_EMAIL_LIST`) | Create, edit, delete, sync any config |
+| **Write** (`WRITE_USER_EMAIL_LIST`) | Create configs; edit/delete/sync own configs |
+| **Read-only** (everyone else) | View configs and blocker lists |
 
 ### Build and Run
 
 ```bash
-# Build the application
+# Build the server binary
 make build
 
-# Run sync command (debug mode with colors)
-make sync
-
-# Run wipe-blockers command (debug mode with colors)
-make wipe-blockers
+# Build and run in debug mode (colored logs)
+make serve
 
 # Or run manually
-./bin/tgifreezeday sync
-./bin/tgifreezeday wipe-blockers
-./bin/tgifreezeday list-blockers
+./bin/tgifreezeday
 ```
+
+The server listens on `http://localhost:8080` by default. Open it in a browser to log in via Google OAuth.
 
 ### Log Levels
 
@@ -90,7 +109,6 @@ The application uses structured logging with the following levels:
 - `warn` - Warning messages
 - `error` - Error messages
 - `fatal` - Fatal errors that cause the application to exit
-- `panic` - Panic level (causes panic)
 
 ### Log Formats
 
@@ -102,13 +120,10 @@ The application supports different log output formats:
 Examples:
 ```bash
 # JSON format (default)
-LOG_LEVEL=debug ./bin/tgifreezeday sync
+LOG_LEVEL=debug ./bin/tgifreezeday
 
-# Key-value format for human reading
-LOG_FORMAT=text LOG_LEVEL=info ./bin/tgifreezeday sync
-
-# Colored format for development
-LOG_FORMAT=colored LOG_LEVEL=debug ./bin/tgifreezeday sync
+# Colored format for development (also what `make serve` uses)
+LOG_FORMAT=colored LOG_LEVEL=debug ./bin/tgifreezeday
 ```
 
 ## CI/CD Pipeline
@@ -117,15 +132,14 @@ The project includes a complete CI/CD pipeline using GitHub Actions:
 
 ### Workflow Overview
 
-1. **Lint and Format** - Runs on every push and PR
+1. **Lint and Format** - Runs on every push
    - Validates Go code formatting with `gofmt`
    - Runs `golangci-lint` for code quality checks
    - Fails if code is not properly formatted or has linting issues
 
 2. **Build and Test** - Runs after successful linting
    - Runs all tests with `go test ./...`
-   - Builds the binary to ensure compilation works
-   - Tests binary execution
+   - Builds the server binary
 
 3. **Docker Build and Push** - Runs only on `main` branch
    - Builds multi-platform Docker images (linux/amd64, linux/arm64)
@@ -134,7 +148,7 @@ The project includes a complete CI/CD pipeline using GitHub Actions:
 
 ### Docker Support
 
-The application can be run in a Docker container:
+The application runs as a long-lived web server. Pass all required env vars and mount a volume for the SQLite database:
 
 ```bash
 # Build Docker image locally
@@ -142,12 +156,15 @@ docker build -t tgifreezeday .
 
 # Run with environment variables
 docker run --rm \
-  -e GOOGLE_APP_CLIENT_CRED_JSON_PATH=/app/creds.json \
+  -p 8080:8080 \
+  -e GOOGLE_OAUTH_CLIENT_ID=your-client-id \
+  -e GOOGLE_OAUTH_CLIENT_SECRET=your-secret \
+  -e GOOGLE_OAUTH_REDIRECT_URL=http://localhost:8080/oauth/callback \
+  -e SESSION_SECRET=replace-with-32-plus-random-chars \
   -e LOG_LEVEL=info \
-  -e LOG_FORMAT=json \
-  -v /path/to/creds.json:/app/creds.json \
-  -v /path/to/config.yaml:/app/config.yaml \
-  tgifreezeday sync
+  -v /path/to/data:/data \
+  -e DB_PATH=/data/tgifreezeday.db \
+  tgifreezeday
 ```
 
 ### GitHub Container Registry
@@ -155,6 +172,10 @@ docker run --rm \
 Pre-built images are available at:
 - `ghcr.io/nvat/tgifreezeday:latest` (latest main branch)
 - `ghcr.io/nvat/tgifreezeday:main-<commit-sha>` (specific commit)
+
+### Kubernetes
+
+The `k8s/` directory contains production-ready manifests (StatefulSet + PVC for SQLite, Service, Ingress, Vault-sourced secrets). The app runs as a single replica because SQLite is a single-writer database.
 
 ### Development Workflow
 
