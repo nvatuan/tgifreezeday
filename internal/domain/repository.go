@@ -7,5 +7,5 @@ import (
 type TGIFCalendarRepository interface {
 	GetFreezeDaysInRange(rangeStart, rangeEnd time.Time) (*TGIFMapping, error)
 	WipeAllBlockersInRange(startDate, endDate time.Time) error
-	WriteBlockerOnDate(date time.Time, summary, description, startTime, endTime string) error
+	WriteBlockerOnDate(date time.Time, summary, description, startTime, endTime string, allDay bool) error
 }

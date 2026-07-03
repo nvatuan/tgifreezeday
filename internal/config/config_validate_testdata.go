@@ -2,6 +2,14 @@ package config
 
 import "github.com/nvat/tgifreezeday/internal/helpers"
 
+// testAnchorToday and testCondNonBusiness are shared constants used across
+// test data and test files in this package to avoid goconst threshold violations.
+const (
+	testAnchorToday     = "today"
+	testAnchorTomorrow  = "tomorrow"
+	testCondNonBusiness = "isNonBusinessDay"
+)
+
 const mockConfigYamlValid = `
 shared:
   lookbackDays: 20
@@ -35,13 +43,13 @@ var mockValidParsedConfig = &Config{
 			CountryCode: "jpn",
 			TodayIsFreezeDayIf: []map[string][]string{
 				{
-					"today": []string{"isTheFirstBusinessDayOfTheMonth"},
+					testAnchorToday: []string{"isTheFirstBusinessDayOfTheMonth"},
 				},
 				{
-					"today": []string{"isTheLastBusinessDayOfTheMonth"},
+					testAnchorToday: []string{"isTheLastBusinessDayOfTheMonth"},
 				},
 				{
-					"tomorrow": []string{"isNonBusinessDay"},
+					testAnchorTomorrow: []string{"isNonBusinessDay"},
 				},
 			},
 		},
@@ -133,7 +141,7 @@ var mockCustomTimesParsedConfig = &Config{
 		GoogleCalendar: GoogleCalendarReadConfig{
 			CountryCode: "jpn",
 			TodayIsFreezeDayIf: []map[string][]string{
-				{"today": []string{"isTheFirstBusinessDayOfTheMonth"}},
+				{testAnchorToday: []string{"isTheFirstBusinessDayOfTheMonth"}},
 			},
 		},
 	},
@@ -227,6 +235,51 @@ writeTo:
         startTime: "10:00"
         endTime: "10:00"
 `
+
+const mockConfigYamlAllDay = `
+shared:
+  lookbackDays: 20
+  lookaheadDays: 60
+readFrom:
+  googleCalendar:
+    countryCode: "jpn"
+    todayIsFreezeDayIf:
+      - today:
+        - isTheFirstBusinessDayOfTheMonth
+writeTo:
+  googleCalendar:
+    id: "example-freeze@example.com"
+    ifTodayIsFreezeDay:
+      default:
+        allDay: true
+`
+
+var mockAllDayParsedConfig = &Config{
+	Shared: SharedConfig{
+		LookbackDays:  20,
+		LookaheadDays: 60,
+	},
+	ReadFrom: ReadFromConfig{
+		GoogleCalendar: GoogleCalendarReadConfig{
+			CountryCode: "jpn",
+			TodayIsFreezeDayIf: []map[string][]string{
+				{testAnchorToday: []string{"isTheFirstBusinessDayOfTheMonth"}},
+			},
+		},
+	},
+	WriteTo: WriteToConfig{
+		GoogleCalendar: GoogleCalendarWriteConfig{
+			ID: "example-freeze@example.com",
+			IfTodayIsFreezeDay: IfTodayIsFreezeDayConfig{
+				Default: DefaultConfig{
+					Summary:     helpers.StringPtr("Today is FREEZE-DAY. no PROD operation is allowed."),
+					Description: helpers.StringPtr("Managed by tgifreezeday, do not modify."),
+					AllDay:      helpers.BoolPtr(true),
+				},
+			},
+		},
+	},
+}
 
 const mockConfigYamlInvalidUnsupportedCheck = `
 shared:

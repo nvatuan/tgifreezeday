@@ -31,6 +31,9 @@ var jstDisplay = scheduler.JST
 const (
 	countryCodeJPN = "jpn"
 	countryCodeVNM = "vnm"
+
+	ruleAnchorToday    = "today"
+	ruleAnchorTomorrow = "tomorrow"
 )
 
 type ConfigHandler struct {
@@ -152,8 +155,21 @@ func (h *ConfigHandler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := roleFromContext(r.Context())
+
+	// Resolve a human-readable calendar name for the detail view.
+	calendarName := ""
+	if appCfg, parseErr := appconfig.LoadWithDefaultFromByteArray([]byte(cfg.ConfigYAML)); parseErr == nil {
+		calID := appCfg.WriteTo.GoogleCalendar.ID
+		for _, cal := range h.fetchCalendars(r.Context(), user.ID) {
+			if cal.ID == calID {
+				calendarName = cal.Summary
+				break
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configDetailHTML(h.basePath, cfg, user.ID, role)) //nolint:errcheck
+	fmt.Fprint(w, configDetailHTML(h.basePath, cfg, user.ID, role, calendarName)) //nolint:errcheck
 }
 
 // HandleEdit renders the config edit form pre-populated.
@@ -504,15 +520,23 @@ func (h *ConfigHandler) runSync(ctx context.Context, userID int64, cfg *db.Confi
 	if err != nil {
 		return err.Error(), true
 	}
+	d := appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default
+	allDay := d.AllDay != nil && *d.AllDay
+	startTime, endTime := "", ""
+	if !allDay {
+		startTime = *d.StartTime
+		endTime = *d.EndTime
+	}
 	rangeStart, rangeEnd := dateRange(appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
 	return domain.RunSync(
 		repo,
 		rangeStart, rangeEnd,
 		domain.TodayIsFreezeDayIf(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf),
-		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary,
-		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description,
-		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime,
-		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime,
+		*d.Summary,
+		*d.Description,
+		startTime,
+		endTime,
+		allDay,
 	)
 }
 
@@ -541,7 +565,6 @@ type blockerItem struct {
 // configFormData holds the structured fields for the config create/edit form.
 type configFormData struct {
 	Name          string
-	SchemaVersion string
 	LookbackDays  int
 	LookaheadDays int
 	CountryCode   string
@@ -550,6 +573,7 @@ type configFormData struct {
 	Description   string
 	StartTime     string
 	EndTime       string
+	AllDay        bool
 	SyncSchedule  string
 	// Rules is the todayIsFreezeDayIf slice — each map has exactly one key (anchor) → conditions.
 	Rules []map[string][]string
@@ -563,7 +587,6 @@ type formRule struct {
 
 func defaultFormData() configFormData {
 	return configFormData{
-		SchemaVersion: appconfig.CurrentSchemaVersion,
 		LookbackDays:  20,
 		LookaheadDays: 60,
 		CountryCode:   countryCodeJPN,
@@ -571,11 +594,12 @@ func defaultFormData() configFormData {
 		Description:   "Production operations restricted today.",
 		StartTime:     "08:00",
 		EndTime:       "20:00",
+		AllDay:        false,
 		SyncSchedule:  db.SyncScheduleNone,
 		Rules: []map[string][]string{
-			{"today": {"isTheFirstBusinessDayOfTheMonth"}},
-			{"today": {"isTheLastBusinessDayOfTheMonth"}},
-			{"tomorrow": {"isNonBusinessDay"}},
+			{ruleAnchorToday: {"isTheFirstBusinessDayOfTheMonth"}},
+			{ruleAnchorToday: {"isTheLastBusinessDayOfTheMonth"}},
+			{ruleAnchorTomorrow: {"isNonBusinessDay"}},
 		},
 	}
 }
@@ -584,7 +608,6 @@ func defaultFormData() configFormData {
 func configToFormData(cfg *db.Config, appCfg *appconfig.Config) configFormData {
 	data := configFormData{
 		Name:          cfg.Name,
-		SchemaVersion: cfg.SchemaVersion,
 		SyncSchedule:  cfg.SyncSchedule,
 		LookbackDays:  appCfg.Shared.LookbackDays,
 		LookaheadDays: appCfg.Shared.LookaheadDays,
@@ -604,6 +627,9 @@ func configToFormData(cfg *db.Config, appCfg *appconfig.Config) configFormData {
 	}
 	if d.EndTime != nil {
 		data.EndTime = *d.EndTime
+	}
+	if d.AllDay != nil {
+		data.AllDay = *d.AllDay
 	}
 	return data
 }
@@ -640,10 +666,18 @@ func formToAppConfig(r *http.Request) (*appconfig.Config, error) {
 
 	summary := r.FormValue("event_summary")
 	description := r.FormValue("event_description")
-	startTime := r.FormValue("start_time")
-	endTime := r.FormValue("end_time")
 	calendarID := r.FormValue("write_calendar_id")
 	countryCode := r.FormValue("country_code")
+	allDay := r.FormValue("all_day") == "on"
+
+	var allDayPtr *bool
+	var startTimePtr, endTimePtr *string
+	if allDay {
+		allDayPtr = helpers.BoolPtr(true)
+	} else {
+		startTimePtr = helpers.StringPtr(r.FormValue("start_time"))
+		endTimePtr = helpers.StringPtr(r.FormValue("end_time"))
+	}
 
 	cfg := &appconfig.Config{
 		Shared: appconfig.SharedConfig{
@@ -663,8 +697,9 @@ func formToAppConfig(r *http.Request) (*appconfig.Config, error) {
 					Default: appconfig.DefaultConfig{
 						Summary:     helpers.StringPtr(summary),
 						Description: helpers.StringPtr(description),
-						StartTime:   helpers.StringPtr(startTime),
-						EndTime:     helpers.StringPtr(endTime),
+						StartTime:   startTimePtr,
+						EndTime:     endTimePtr,
+						AllDay:      allDayPtr,
 					},
 				},
 			},
@@ -701,7 +736,6 @@ func formDataFromRequest(r *http.Request) configFormData {
 		rules = defaultFormData().Rules
 	}
 	return configFormData{
-		SchemaVersion: appconfig.CurrentSchemaVersion,
 		LookbackDays:  lookback,
 		LookaheadDays: lookahead,
 		CountryCode:   r.FormValue("country_code"),
@@ -710,6 +744,7 @@ func formDataFromRequest(r *http.Request) configFormData {
 		Description:   r.FormValue("event_description"),
 		StartTime:     r.FormValue("start_time"),
 		EndTime:       r.FormValue("end_time"),
+		AllDay:        r.FormValue("all_day") == "on",
 		Rules:         rules,
 	}
 }
@@ -950,7 +985,7 @@ func autoSyncModalHTML(basePath string, cfg *db.Config, canEdit bool) string {
 		cfg.ID, syncScheduleOptions(cfg.SyncSchedule))
 }
 
-func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role perm.Role) string {
+func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role perm.Role, calendarName string) string {
 	badge := statusBadgeHTML(cfg.Status, cfg.StatusMessage)
 	escapedName := html.EscapeString(cfg.Name)
 	escapedSchema := html.EscapeString(cfg.SchemaVersion)
@@ -1015,7 +1050,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 	autoSyncTrigger := autoSyncTriggerHTML(cfg, canEdit)
 
 	// Build human-readable config detail cards.
-	configCardsHTML := configDetailCardsHTML(cfg.ConfigYAML)
+	configCardsHTML := configDetailCardsHTML(cfg.ConfigYAML, calendarName)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -1142,7 +1177,8 @@ func countryLabel(code string) string {
 
 // configDetailCardsHTML renders human-readable detail cards from the stored YAML.
 // Falls back to a raw YAML display if parsing fails.
-func configDetailCardsHTML(yamlContent string) string {
+// calendarName is the human-readable name for the write calendar (empty string = show ID only).
+func configDetailCardsHTML(yamlContent, calendarName string) string {
 	appCfg, err := appconfig.LoadWithDefaultFromByteArray([]byte(yamlContent))
 	if err != nil {
 		return fmt.Sprintf(`<div class="detail-card"><h4>Config (parse error)</h4><pre style="white-space:pre-wrap;font-size:0.84rem">%s</pre></div>`,
@@ -1188,23 +1224,29 @@ func configDetailCardsHTML(yamlContent string) string {
   %s
 </div>`, rulesSB.String())
 
-	// Calendar card
+	// Calendar card — show friendly name when available.
+	calID := appCfg.WriteTo.GoogleCalendar.ID
+	calDisplay := html.EscapeString(calID)
+	if calendarName != "" {
+		calDisplay = fmt.Sprintf("%s (%s)", html.EscapeString(calendarName), html.EscapeString(calID))
+	}
 	calendarCard := fmt.Sprintf(`
 <div class="detail-card">
   <h4>Target Calendar</h4>
-  <div class="detail-field"><label>Calendar ID</label><div class="val" style="word-break:break-all">%s</div></div>
-</div>`, html.EscapeString(appCfg.WriteTo.GoogleCalendar.ID))
+  <div class="detail-field"><div class="val" style="word-break:break-all">%s</div></div>
+</div>`, calDisplay)
 
 	// Blocker event card
-	summary := ""
-	description := ""
+	evSummary := ""
+	evDescription := ""
 	startTime := ""
 	endTime := ""
+	isAllDay := d.AllDay != nil && *d.AllDay
 	if d.Summary != nil {
-		summary = *d.Summary
+		evSummary = *d.Summary
 	}
 	if d.Description != nil {
-		description = *d.Description
+		evDescription = *d.Description
 	}
 	if d.StartTime != nil {
 		startTime = *d.StartTime
@@ -1212,20 +1254,26 @@ func configDetailCardsHTML(yamlContent string) string {
 	if d.EndTime != nil {
 		endTime = *d.EndTime
 	}
+	var timingHTML string
+	if isAllDay {
+		timingHTML = `<div class="detail-field"><label>Timing</label><div class="val">All-day event</div></div>`
+	} else {
+		timingHTML = fmt.Sprintf(`
+  <div class="detail-row">
+    <div class="detail-field"><label>Start</label><div class="val">%s</div></div>
+    <div class="detail-field"><label>End</label><div class="val">%s</div></div>
+  </div>`, html.EscapeString(startTime), html.EscapeString(endTime))
+	}
 	eventCard := fmt.Sprintf(`
 <div class="detail-card">
   <h4>Blocker Event</h4>
   <div class="detail-field" style="margin-bottom:0.5rem"><label>Summary</label><div class="val">%s</div></div>
   <div class="detail-field" style="margin-bottom:0.5rem"><label>Description</label><div class="val" style="font-size:0.85rem;white-space:pre-wrap">%s</div></div>
-  <div class="detail-row">
-    <div class="detail-field"><label>Start</label><div class="val">%s</div></div>
-    <div class="detail-field"><label>End</label><div class="val">%s</div></div>
-  </div>
+  %s
 </div>`,
-		html.EscapeString(summary),
-		html.EscapeString(description),
-		html.EscapeString(startTime),
-		html.EscapeString(endTime))
+		html.EscapeString(evSummary),
+		html.EscapeString(evDescription),
+		timingHTML)
 
 	return dateRangeCard + holidayCard + freezeCard + calendarCard + eventCard
 }
@@ -1275,14 +1323,14 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
 
 	calPicker := calendarPickerHTML(cals, data.CalendarID)
 
-	schemaPicker := fmt.Sprintf(`
-<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
-  <span style="font-size:0.88rem;color:var(--pico-muted-color)">Schema: <strong>%s</strong></span>
-  <a href="`+basePath+`/schema/%s" target="_blank" title="View schema reference" style="font-size:1rem;text-decoration:none">ℹ️</a>
-</div>`,
-		html.EscapeString(data.SchemaVersion),
-		html.EscapeString(data.SchemaVersion),
-	)
+	allDayChecked := ""
+	timeFieldsStyle := ""
+	timeRequired := " required"
+	if data.AllDay {
+		allDayChecked = " checked"
+		timeFieldsStyle = `style="display:none"`
+		timeRequired = ""
+	}
 
 	autoSyncPicker := fmt.Sprintf(`
 <label for="sync_schedule">Auto-Sync
@@ -1355,7 +1403,6 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
     <label for="name">Config Name
       <input type="text" id="name" name="name" value="%s" placeholder="e.g. Japan prod freeze" required>
     </label>
-    %s
 
     <div class="section-header">Date Range</div>
     <div class="two-col">
@@ -1397,13 +1444,19 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
       <textarea id="event_description" name="event_description" rows="4" maxlength="8000" placeholder="Production operations restricted today.">%s</textarea>
       <small style="color:var(--pico-muted-color)">HTML supported: &lt;br&gt;, &lt;ul&gt;&lt;li&gt;, &lt;a href=""&gt;, &lt;strong&gt;, &lt;em&gt;. Max 8000 characters.</small>
     </label>
-    <div class="two-col">
-      <label for="start_time">Start time
-        <input type="time" id="start_time" name="start_time" value="%s" required>
-      </label>
-      <label for="end_time">End time
-        <input type="time" id="end_time" name="end_time" value="%s" required>
-      </label>
+    <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;cursor:pointer">
+      <input type="checkbox" id="all_day" name="all_day" onchange="toggleAllDay(this)"%s style="margin:0;width:auto">
+      All-day event
+    </label>
+    <div id="time-fields" %s>
+      <div class="two-col">
+        <label for="start_time">Start time
+          <input type="time" id="start_time" name="start_time" value="%s"%s>
+        </label>
+        <label for="end_time">End time
+          <input type="time" id="end_time" name="end_time" value="%s"%s>
+        </label>
+      </div>
     </div>
 
     <div class="section-header">Auto-Sync</div>
@@ -1501,6 +1554,21 @@ function removeCond(gi, ci) {
   renderRules();
 }
 
+function toggleAllDay(cb) {
+  var tf = document.getElementById('time-fields');
+  var st = document.getElementById('start_time');
+  var et = document.getElementById('end_time');
+  if (cb.checked) {
+    tf.style.display = 'none';
+    st.removeAttribute('required');
+    et.removeAttribute('required');
+  } else {
+    tf.style.display = '';
+    st.setAttribute('required', '');
+    et.setAttribute('required', '');
+  }
+}
+
 document.getElementById('config-form').addEventListener('submit', function() {
   document.getElementById('rules_json').value = JSON.stringify(rules);
 });
@@ -1518,7 +1586,6 @@ renderRules();
 		errHTML,
 		html.EscapeString(action),
 		html.EscapeString(data.Name),
-		schemaPicker,
 		data.LookbackDays,
 		data.LookaheadDays,
 		countryOptions,
@@ -1526,8 +1593,12 @@ renderRules();
 		html.EscapeString(data.CalendarID),
 		html.EscapeString(data.Summary),
 		html.EscapeString(data.Description),
+		allDayChecked,
+		timeFieldsStyle,
 		data.StartTime,
+		timeRequired,
 		data.EndTime,
+		timeRequired,
 		autoSyncPicker,
 		deleteBtn,
 		html.EscapeString(backURL),

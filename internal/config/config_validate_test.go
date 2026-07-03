@@ -49,7 +49,22 @@ func configsEqual(a, b *Config) bool {
 		return false
 	}
 
+	if !boolPtrsEqual(aDefault.AllDay, bDefault.AllDay) {
+		return false
+	}
+
 	return true
+}
+
+// boolPtrsEqual compares two bool pointers by their values
+func boolPtrsEqual(a, b *bool) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
 
 // stringPtrsEqual compares two string pointers by their values
@@ -71,6 +86,7 @@ func Test_ConfigValidate(t *testing.T) {
 	}{
 		{name: "valid", yaml: mockConfigYamlValid, want: mockValidParsedConfig},
 		{name: "valid_custom_times", yaml: mockConfigYamlCustomTimes, want: mockCustomTimesParsedConfig},
+		{name: "valid_all_day", yaml: mockConfigYamlAllDay, want: mockAllDayParsedConfig},
 		{name: "invalid_countryCode", yaml: mockConfigYamlInvalidCountryCode, want: nil},
 		{name: "invalid_unsupportedDate", yaml: mockConfigYamlInvalidUnsupportedDate, want: nil},
 		{name: "invalid_unsupportedCheck", yaml: mockConfigYamlInvalidUnsupportedCheck, want: nil},

@@ -13,7 +13,7 @@ A self-hosted web app that manages production freeze day blocker events on Googl
 ## Concepts
 
 - **Freeze Day**: A day when production deployments are restricted to reduce risk
-- **Blocker Event**: A calendar event (8AM-8PM) that signals "no deployments allowed" on the calendar. This serves as a notice for everyone.
+- **Blocker Event**: A calendar event that signals "no deployments allowed" on the calendar. This serves as a notice for everyone. By default it spans 8AM–8PM; check "All-day event" in the config form to create a full all-day event instead.
 
 ## How It Works
 

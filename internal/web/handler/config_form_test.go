@@ -10,6 +10,12 @@ import (
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
 )
 
+const (
+	formKeyLookback  = "lookback_days"
+	formKeyLookahead = "lookahead_days"
+	formKeyRulesJSON = "rules_json"
+)
+
 // makeFormRequest builds a POST *http.Request with the given form values.
 func makeFormRequest(values url.Values) *http.Request {
 	r, _ := http.NewRequest(http.MethodPost, "/", strings.NewReader(values.Encode()))
@@ -29,19 +35,19 @@ func rulesJSON(t *testing.T, rules []formRule) string {
 
 func TestFormToAppConfig_ValidInput(t *testing.T) {
 	rules := []formRule{
-		{Anchor: "today", Conditions: []string{"isTheFirstBusinessDayOfTheMonth", "isTheLastBusinessDayOfTheMonth"}},
-		{Anchor: "tomorrow", Conditions: []string{"isNonBusinessDay"}},
+		{Anchor: ruleAnchorToday, Conditions: []string{"isTheFirstBusinessDayOfTheMonth", "isTheLastBusinessDayOfTheMonth"}},
+		{Anchor: ruleAnchorTomorrow, Conditions: []string{"isNonBusinessDay"}},
 	}
 	form := url.Values{
-		"lookback_days":     {"20"},
-		"lookahead_days":    {"60"},
+		formKeyLookback:     {"20"},
+		formKeyLookahead:    {"60"},
 		"country_code":      {countryCodeJPN},
 		"write_calendar_id": {"team-cal@group.calendar.google.com"},
 		"event_summary":     {"🚫 PRODUCTION FREEZE"},
 		"event_description": {"No prod ops today."},
 		"start_time":        {"08:00"},
 		"end_time":          {"20:00"},
-		"rules_json":        {rulesJSON(t, rules)},
+		formKeyRulesJSON:    {rulesJSON(t, rules)},
 	}
 	r := makeFormRequest(form)
 
@@ -56,8 +62,8 @@ func TestFormToAppConfig_ValidInput(t *testing.T) {
 	if cfg.Shared.LookaheadDays != 60 {
 		t.Errorf("LookaheadDays = %d, want 60", cfg.Shared.LookaheadDays)
 	}
-	if cfg.ReadFrom.GoogleCalendar.CountryCode != "jpn" {
-		t.Errorf("CountryCode = %q, want jpn", cfg.ReadFrom.GoogleCalendar.CountryCode)
+	if cfg.ReadFrom.GoogleCalendar.CountryCode != countryCodeJPN {
+		t.Errorf("CountryCode = %q, want %s", cfg.ReadFrom.GoogleCalendar.CountryCode, countryCodeJPN)
 	}
 	if cfg.WriteTo.GoogleCalendar.ID != "team-cal@group.calendar.google.com" {
 		t.Errorf("CalendarID = %q", cfg.WriteTo.GoogleCalendar.ID)
@@ -73,18 +79,18 @@ func TestFormToAppConfig_ValidInput(t *testing.T) {
 
 func TestFormToAppConfig_RoundTrip(t *testing.T) {
 	rules := []formRule{
-		{Anchor: "today", Conditions: []string{"isTheLastBusinessDayOfTheMonth"}},
+		{Anchor: ruleAnchorToday, Conditions: []string{"isTheLastBusinessDayOfTheMonth"}},
 	}
 	form := url.Values{
-		"lookback_days":     {"30"},
-		"lookahead_days":    {"45"},
+		formKeyLookback:     {"30"},
+		formKeyLookahead:    {"45"},
 		"country_code":      {"vnm"},
 		"write_calendar_id": {"myteam@group.calendar.google.com"},
 		"event_summary":     {"Freeze"},
 		"event_description": {"No deployments."},
 		"start_time":        {"09:00"},
 		"end_time":          {"18:00"},
-		"rules_json":        {rulesJSON(t, rules)},
+		formKeyRulesJSON:    {rulesJSON(t, rules)},
 	}
 	r := makeFormRequest(form)
 
@@ -116,15 +122,15 @@ func TestFormToAppConfig_RoundTrip(t *testing.T) {
 
 func TestFormToAppConfig_MissingRules(t *testing.T) {
 	form := url.Values{
-		"lookback_days":     {"20"},
-		"lookahead_days":    {"60"},
-		"country_code":      {"jpn"},
+		formKeyLookback:     {"20"},
+		formKeyLookahead:    {"60"},
+		"country_code":      {countryCodeJPN},
 		"write_calendar_id": {"cal@group.calendar.google.com"},
 		"event_summary":     {"Freeze"},
 		"event_description": {"No ops"},
 		"start_time":        {"08:00"},
 		"end_time":          {"20:00"},
-		"rules_json":        {""},
+		formKeyRulesJSON:    {""},
 	}
 	r := makeFormRequest(form)
 	_, err := formToAppConfig(r)
@@ -133,11 +139,51 @@ func TestFormToAppConfig_MissingRules(t *testing.T) {
 	}
 }
 
+func TestFormToAppConfig_AllDay(t *testing.T) {
+	rules := []formRule{
+		{Anchor: ruleAnchorToday, Conditions: []string{"isTheFirstBusinessDayOfTheMonth"}},
+	}
+	form := url.Values{
+		formKeyLookback:     {"20"},
+		formKeyLookahead:    {"60"},
+		"country_code":      {countryCodeJPN},
+		"write_calendar_id": {"team-cal@group.calendar.google.com"},
+		"event_summary":     {"🚫 Freeze"},
+		"event_description": {"No prod."},
+		"all_day":           {"on"},
+		// start_time / end_time intentionally omitted (hidden when all_day checked)
+		formKeyRulesJSON: {rulesJSON(t, rules)},
+	}
+	r := makeFormRequest(form)
+
+	cfg, err := formToAppConfig(r)
+	if err != nil {
+		t.Fatalf("formToAppConfig() error = %v", err)
+	}
+
+	d := cfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default
+	if d.AllDay == nil || !*d.AllDay {
+		t.Error("AllDay should be true")
+	}
+	// StartTime and EndTime should remain nil (not set by SetDefault when allDay=true).
+	if d.StartTime != nil {
+		t.Errorf("StartTime should be nil for all-day, got %q", *d.StartTime)
+	}
+	if d.EndTime != nil {
+		t.Errorf("EndTime should be nil for all-day, got %q", *d.EndTime)
+	}
+
+	// Should validate without error
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestFormToAppConfig_InvalidLookback(t *testing.T) {
 	form := url.Values{
-		"lookback_days":  {"notanumber"},
-		"lookahead_days": {"60"},
-		"rules_json":     {`[{"anchor":"today","conditions":["isNonBusinessDay"]}]`},
+		formKeyLookback:  {"notanumber"},
+		formKeyLookahead: {"60"},
+		formKeyRulesJSON: {`[{"anchor":"today","conditions":["isNonBusinessDay"]}]`},
 	}
 	r := makeFormRequest(form)
 	_, err := formToAppConfig(r)

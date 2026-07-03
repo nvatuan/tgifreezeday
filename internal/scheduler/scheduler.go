@@ -134,15 +134,23 @@ func (s *Scheduler) runSync(ctx context.Context, cfg *db.Config) (string, bool) 
 	if err != nil {
 		return err.Error(), true
 	}
+	d := appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default
+	allDay := d.AllDay != nil && *d.AllDay
+	startTime, endTime := "", ""
+	if !allDay {
+		startTime = *d.StartTime
+		endTime = *d.EndTime
+	}
 	rangeStart, rangeEnd := syncDateRange(appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
 	return domain.RunSync(
 		repo,
 		rangeStart, rangeEnd,
 		domain.TodayIsFreezeDayIf(appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf),
-		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary,
-		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description,
-		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime,
-		*appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime,
+		*d.Summary,
+		*d.Description,
+		startTime,
+		endTime,
+		allDay,
 	)
 }
 

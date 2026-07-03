@@ -40,6 +40,7 @@ type DefaultConfig struct {
 	Description *string `yaml:"description,omitempty"`
 	StartTime   *string `yaml:"startTime,omitempty"`
 	EndTime     *string `yaml:"endTime,omitempty"`
+	AllDay      *bool   `yaml:"allDay,omitempty"`
 }
 
 type Config struct {
@@ -77,10 +78,14 @@ func (c *Config) SetDefault() {
 	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description == nil {
 		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description = helpers.StringPtr(defaultDescription)
 	}
-	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime == nil {
-		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime = helpers.StringPtr("08:00")
-	}
-	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime == nil {
-		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime = helpers.StringPtr("20:00")
+	// Only set time defaults for timed (non-all-day) events.
+	allDay := c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.AllDay
+	if allDay == nil || !*allDay {
+		if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime == nil {
+			c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime = helpers.StringPtr("08:00")
+		}
+		if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime == nil {
+			c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime = helpers.StringPtr("20:00")
+		}
 	}
 }
