@@ -156,9 +156,11 @@ func (h *ConfigHandler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	role := roleFromContext(r.Context())
 
-	// Resolve a human-readable calendar name for the detail view.
+	// Parse once; resolve calendar name from the result.
+	var parsedCfg *appconfig.Config
 	calendarName := ""
 	if appCfg, parseErr := appconfig.LoadWithDefaultFromByteArray([]byte(cfg.ConfigYAML)); parseErr == nil {
+		parsedCfg = appCfg
 		calID := appCfg.WriteTo.GoogleCalendar.ID
 		for _, cal := range h.fetchCalendars(r.Context(), user.ID) {
 			if cal.ID == calID {
@@ -169,7 +171,7 @@ func (h *ConfigHandler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configDetailHTML(h.basePath, cfg, user.ID, role, calendarName)) //nolint:errcheck
+	fmt.Fprint(w, configDetailHTML(h.basePath, cfg, user.ID, role, parsedCfg, calendarName)) //nolint:errcheck
 }
 
 // HandleEdit renders the config edit form pre-populated.
@@ -706,6 +708,9 @@ func formToAppConfig(r *http.Request) (*appconfig.Config, error) {
 		},
 	}
 	cfg.SetDefault()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -717,7 +722,10 @@ func rulesToJSON(rules []map[string][]string) string {
 			jsRules = append(jsRules, formRule{Anchor: anchor, Conditions: conditions})
 		}
 	}
-	b, _ := json.Marshal(jsRules) //nolint:errcheck
+	b, err := json.Marshal(jsRules)
+	if err != nil {
+		return "[]"
+	}
 	return string(b)
 }
 
@@ -985,7 +993,7 @@ func autoSyncModalHTML(basePath string, cfg *db.Config, canEdit bool) string {
 		cfg.ID, syncScheduleOptions(cfg.SyncSchedule))
 }
 
-func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role perm.Role, calendarName string) string {
+func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role perm.Role, appCfg *appconfig.Config, calendarName string) string {
 	badge := statusBadgeHTML(cfg.Status, cfg.StatusMessage)
 	escapedName := html.EscapeString(cfg.Name)
 	escapedSchema := html.EscapeString(cfg.SchemaVersion)
@@ -1050,7 +1058,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 	autoSyncTrigger := autoSyncTriggerHTML(cfg, canEdit)
 
 	// Build human-readable config detail cards.
-	configCardsHTML := configDetailCardsHTML(cfg.ConfigYAML, calendarName)
+	configCardsHTML := configDetailCardsHTML(appCfg, calendarName)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -1159,6 +1167,7 @@ func conditionLabel(c string) string {
 	case "isNonBusinessDay":
 		return "non-business day (weekend / holiday)"
 	default:
+		// return raw key for forward-compat — add labels here when adding new conditions
 		return c
 	}
 }
@@ -1175,14 +1184,12 @@ func countryLabel(code string) string {
 	}
 }
 
-// configDetailCardsHTML renders human-readable detail cards from the stored YAML.
-// Falls back to a raw YAML display if parsing fails.
+// configDetailCardsHTML renders human-readable detail cards from the parsed config.
+// Falls back to a generic parse-error notice when appCfg is nil.
 // calendarName is the human-readable name for the write calendar (empty string = show ID only).
-func configDetailCardsHTML(yamlContent, calendarName string) string {
-	appCfg, err := appconfig.LoadWithDefaultFromByteArray([]byte(yamlContent))
-	if err != nil {
-		return fmt.Sprintf(`<div class="detail-card"><h4>Config (parse error)</h4><pre style="white-space:pre-wrap;font-size:0.84rem">%s</pre></div>`,
-			html.EscapeString(err.Error()))
+func configDetailCardsHTML(appCfg *appconfig.Config, calendarName string) string {
+	if appCfg == nil {
+		return `<div class="detail-card"><h4>Config (parse error)</h4><p style="font-size:0.84rem;color:var(--pico-muted-color)">Could not parse config YAML.</p></div>`
 	}
 
 	d := appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default
@@ -1595,9 +1602,9 @@ renderRules();
 		html.EscapeString(data.Description),
 		allDayChecked,
 		timeFieldsStyle,
-		data.StartTime,
+		html.EscapeString(data.StartTime),
 		timeRequired,
-		data.EndTime,
+		html.EscapeString(data.EndTime),
 		timeRequired,
 		autoSyncPicker,
 		deleteBtn,
