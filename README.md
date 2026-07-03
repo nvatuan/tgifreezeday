@@ -8,7 +8,7 @@ _no need to touch prod to day, touch grass instead_
 
 <!-- <img src="./docs/tgifreezeday.png"> -->
 
-A self-hosted web app that manages production freeze day blocker events on Google Calendar. Users log in with their Google account, define freeze-day rules in a YAML config, and the app creates blocker calendar events so the whole team knows when deployments are restricted.
+A self-hosted web app that manages production freeze day blocker events on Google Calendar. Users log in with their Google account, define freeze-day rules through a structured form, and the app creates blocker calendar events so the whole team knows when deployments are restricted.
 
 ## Concepts
 
@@ -25,7 +25,7 @@ sequenceDiagram
     participant Target as Team Calendar
 
     User->>App: Log in with Google OAuth
-    User->>App: Create / edit config (YAML)
+    User->>App: Create / edit config (structured form)
     User->>App: Click Sync
     App->>Source: Read public holidays
     App->>App: Calculate freeze days
@@ -34,7 +34,7 @@ sequenceDiagram
 ```
 
 1. **Log in** with your Google account via OAuth
-2. **Create a config** — define your freeze-day rules and target calendar in YAML
+2. **Create a config** — fill in the structured form to define freeze-day rules and the target calendar
 3. **Sync** — the app reads public holidays, calculates freeze days, and writes blocker events to your team calendar
 4. **Manage** — validate configs, wipe blockers, or list existing blocker events from the UI
 
@@ -45,60 +45,49 @@ The app is a web server. After starting it, open `http://localhost:8080` in your
 | Page | Description |
 |------|-------------|
 | Dashboard | Lists all configs with status and auto-sync schedule badges |
-| Config Detail | View config YAML, run Sync / Wipe / Validate / List Blockers; configure Auto-Sync |
-| Config Edit | Edit config name, YAML, and schema version |
+| Config Detail | View config fields at a glance, run Sync / Wipe / Validate / List Blockers; configure Auto-Sync |
+| Config Create / Edit | Fill in a structured form — no YAML required |
 
 ## Configuration
 
-Using the webapp, you can create Configs and edit them. Configs is the way you create Events on your Google Calendar based on your rules of "what is a freeze day".
-Below show the configuration yaml example:
+Configs define your freeze-day rules and target calendar. Create and edit them through the structured web form — no YAML needed.
 
-### Basic Example
+> **Technical note:** YAML is the internal storage format. The form builds it server-side from your inputs.
+
+<details>
+<summary>YAML reference (internal storage format)</summary>
 
 ```yaml
 shared:
   lookbackDays: 20      # Check 20 days back
   lookaheadDays: 60     # Check 60 days ahead
-  
+
 readFrom:
   googleCalendar:
-    # Basically this means check Japan public holidays calendar
-    countryCode: "jpn"
-
-    # This is a list, each entry is a key which can be [yesterday, today, tomorrow]
-    # Each key contains a list of "conditions checks" which is AND within the key, and OR'd all keys
-    # eg.
-    # todayIsFreezeDayIf:
-    #  - today: [isTheFirstBusinessDayOfTheMonth, isMonday]
-    #  - today: [isTheLastBusinessDayOfTheMonth] 
-    # Means Today is a FreezeDay if "today <Is The First Busines Day of The Month> AND <it is Monday>" OR "today <Is The Last Business Day Of the Month>"
-    # Note: isMonday isn't available yet as of 2026 May 8th version
+    countryCode: "jpn"  # ISO 3166-1 alpha-3: "jpn" or "vnm"
     todayIsFreezeDayIf:
       - today: [isTheFirstBusinessDayOfTheMonth]
-      - today: [isTheLastBusinessDayOfTheMonth] 
+      - today: [isTheLastBusinessDayOfTheMonth]
       - tomorrow: [isNonBusinessDay]
-      
+
 writeTo:
   googleCalendar:
-    # Calendar ID of the calendar to write blocker events to. The Webapp shall let you pick the calendar and fill the ID for you.
     id: "your-calendar-id@group.calendar.google.com"
-
-    # what to do if today is Freeze day
     ifTodayIsFreezeDay:
-      # Modifying the default blocker event: change summary, description, and time window.
-      # Description supports html tags (this is Google Cal feature, we just reuse it, it may change though we don't guarantee support)
       default:
         summary: "🚫 PRODUCTION FREEZE - No Deployments"
         description: |
           Production operations restricted today.<br>
           <a href="https://wiki.company.com/freeze-policy">Freeze Policy</a>
-        startTime: "08:00"  # optional, HH:MM format, default "08:00"
-        endTime: "20:00"    # optional, HH:MM format, default "20:00"
+        startTime: "08:00"
+        endTime: "20:00"
 ```
+
+</details>
 
 ### Freeze Day Rules
 
-Configure when freeze days occur using these conditions:
+Configure when freeze days occur using these conditions (available as dropdowns in the form):
 
 | Condition | Description |
 |-----------|-------------|
@@ -108,45 +97,38 @@ Configure when freeze days occur using these conditions:
 
 ### Freeze Rule Setting
 
-The program strives to be as natural as possible. Here, in this snippet, you can kind of understand the intention:
+The form uses an OR/AND rule builder. Each **OR group** represents one row — if any group matches, today is a freeze day. Within a group, all conditions must match (AND).
 
-```yaml
-todayIsFreezeDayIf:
-- today: [isTheFirstBusinessDayOfTheMonth]
-```
+Example form state that means "today is a freeze day if (today is the 1st business day) OR (today is the last business day) OR (tomorrow is a non-business day)":
 
-> "Today is freeze-day if Today is the first business day of the month"
+- Group 1: `today` → 1st business day of month
+- Group 2: `today` → last business day of month
+- Group 3: `tomorrow` → non-business day
 
-Here, `"today"` is a Relative Day Anchor. Here are the things you should know:
-- Available Relative Day Anchor: `yesterday`, `today`, `tomorrow`
-- Within an anchor, rules are AND together:
-  - `today: [isA, isB]` meaning "today is freeze day if today is A and is B"
-- Rules across anchors are `OR` together.
-  - ```
-    todayIsFreezeDayIf:
-    - today: [isA, isB]
-    - tomorrow: [isC]
-    ```
-  - Meaning, "today is freeze day if (today is A and B) OR (tomorrow is C)"
+**Available anchors** (Relative Day):
+- `today` — evaluates conditions against today
+- `tomorrow` — evaluates conditions against tomorrow
+- `next day` (nextDay) — evaluates conditions against the next calendar day
 
 ### Supported Countries
 
-- `jpn` - Japan public holidays  
-- `vnm` - Vietnam public holidays
+Available as a dropdown in the form:
+
+- `jpn` — Japan public holidays
+- `vnm` — Vietnam public holidays
 
 ### Rich Descriptions
 
-HTML markup supported for calendar descriptions:
+HTML markup supported for calendar event descriptions (enter in the Description field):
 
-```yaml
-description: |
-  🚫 <strong>PRODUCTION FREEZE</strong><br><br>
-  Restrictions:<br>
-  <ul>
-    <li>No deployments to production</li>
-    <li>No infrastructure changes</li>
-  </ul>
-  Emergency: <a href="mailto:ops@company.com">ops@company.com</a>
+```html
+🚫 <strong>PRODUCTION FREEZE</strong><br><br>
+Restrictions:<br>
+<ul>
+  <li>No deployments to production</li>
+  <li>No infrastructure changes</li>
+</ul>
+Emergency: <a href="mailto:ops@company.com">ops@company.com</a>
 ```
 
 **Supported tags**: `<br>`, `<ul><li>`, `<a href="">`, `<strong>`, `<em>`

@@ -36,10 +36,10 @@ type IfTodayIsFreezeDayConfig struct {
 }
 
 type DefaultConfig struct {
-	Summary     *string `yaml:"summary"`
-	Description *string `yaml:"description"`
-	StartTime   *string `yaml:"startTime"`
-	EndTime     *string `yaml:"endTime"`
+	Summary     *string `yaml:"summary,omitempty"`
+	Description *string `yaml:"description,omitempty"`
+	StartTime   *string `yaml:"startTime,omitempty"`
+	EndTime     *string `yaml:"endTime,omitempty"`
 }
 
 type Config struct {
@@ -60,6 +60,15 @@ func LoadWithDefaultFromByteArray(data []byte) (*Config, error) {
 
 const defaultSummary = "Today is FREEZE-DAY. no PROD operation is allowed."
 const defaultDescription = "Managed by tgifreezeday, do not modify."
+
+// ToYAML marshals the config back to YAML bytes.
+func (c *Config) ToYAML() (string, error) {
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal config to YAML: %w", err)
+	}
+	return string(data), nil
+}
 
 func (c *Config) SetDefault() {
 	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary == nil {

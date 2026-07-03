@@ -15,6 +15,7 @@ import (
 	"github.com/nvat/tgifreezeday/internal/adapter/googlecalendar"
 	appconfig "github.com/nvat/tgifreezeday/internal/config"
 	"github.com/nvat/tgifreezeday/internal/domain"
+	"github.com/nvat/tgifreezeday/internal/helpers"
 	"github.com/nvat/tgifreezeday/internal/logging"
 	"github.com/nvat/tgifreezeday/internal/perm"
 	"github.com/nvat/tgifreezeday/internal/scheduler"
@@ -26,6 +27,11 @@ var log = logging.GetLogger()
 
 // jstDisplay aliases scheduler.JST for formatting timestamps in the UI.
 var jstDisplay = scheduler.JST
+
+const (
+	countryCodeJPN = "jpn"
+	countryCodeVNM = "vnm"
+)
 
 type ConfigHandler struct {
 	configs     *db.ConfigStore
@@ -72,9 +78,8 @@ func (h *ConfigHandler) HandleNew(w http.ResponseWriter, r *http.Request) {
 	}
 	user := userFromContext(r.Context())
 	cals := h.fetchCalendars(r.Context(), user.ID)
-	schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", appconfig.CurrentSchemaVersion, "", "", string(schemaYAML), "", false, db.SyncScheduleNone, cals, h.basePath)) //nolint:errcheck
+	fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", defaultFormData(), "", false, cals, h.basePath)) //nolint:errcheck
 }
 
 // HandleCreate processes the config creation form.
@@ -90,14 +95,30 @@ func (h *ConfigHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.FormValue("name")
-	yamlContent := r.FormValue("config_yaml")
 	syncSchedule := parseSyncSchedule(r.FormValue("sync_schedule"))
 
-	if name == "" {
+	renderFormErr := func(formErr string) {
 		cals := h.fetchCalendars(r.Context(), user.ID)
-		schemaYAML, _ := appconfig.SchemaYAML(appconfig.CurrentSchemaVersion)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", appconfig.CurrentSchemaVersion, name, yamlContent, string(schemaYAML), "Name is required.", false, syncSchedule, cals, h.basePath)) //nolint:errcheck
+		fd := formDataFromRequest(r)
+		fd.Name = name
+		fd.SyncSchedule = syncSchedule
+		fmt.Fprint(w, configFormHTML("New Config", h.basePath+"/configs", h.basePath+"/dashboard", fd, formErr, false, cals, h.basePath)) //nolint:errcheck
+	}
+
+	if name == "" {
+		renderFormErr("Name is required.")
+		return
+	}
+
+	appCfg, err := formToAppConfig(r)
+	if err != nil {
+		renderFormErr(err.Error())
+		return
+	}
+	yamlContent, err := appCfg.ToYAML()
+	if err != nil {
+		renderFormErr("Failed to build config: " + err.Error())
 		return
 	}
 
@@ -153,11 +174,21 @@ func (h *ConfigHandler) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cals := h.fetchCalendars(r.Context(), user.ID)
-	schemaYAML, _ := appconfig.SchemaYAML(cfg.SchemaVersion)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	action := fmt.Sprintf(h.basePath+"/configs/%d", id)
 	backURL := fmt.Sprintf(h.basePath+"/configs/%d", id)
-	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, cfg.SchemaVersion, cfg.Name, cfg.ConfigYAML, string(schemaYAML), "", true, cfg.SyncSchedule, cals, h.basePath)) //nolint:errcheck
+
+	// Parse existing YAML to pre-populate the structured form; fall back to defaults on error.
+	var fd configFormData
+	appCfg, parseErr := h.parseAppConfig(cfg.ConfigYAML)
+	if parseErr != nil {
+		fd = defaultFormData()
+		fd.Name = cfg.Name
+		fd.SyncSchedule = cfg.SyncSchedule
+	} else {
+		fd = configToFormData(cfg, appCfg)
+	}
+	fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, fd, "", true, cals, h.basePath)) //nolint:errcheck
 }
 
 // HandleUpdate processes the config edit form.
@@ -175,13 +206,7 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := r.FormValue("name")
-	yamlContent := r.FormValue("config_yaml")
 	syncSchedule := parseSyncSchedule(r.FormValue("sync_schedule"))
-
-	if name == "" {
-		httpError(w, http.StatusBadRequest, "name is required")
-		return
-	}
 
 	cfg, err := h.getConfig(r.Context(), id, user.ID)
 	if err != nil || cfg == nil {
@@ -190,6 +215,34 @@ func (h *ConfigHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if role := roleFromContext(r.Context()); !role.CanEditConfig(cfg.UserID, user.ID) {
 		httpError(w, http.StatusForbidden, "you do not have permission to edit this config")
+		return
+	}
+
+	action := fmt.Sprintf(h.basePath+"/configs/%d", id)
+	backURL := fmt.Sprintf(h.basePath+"/configs/%d", id)
+
+	renderFormErr := func(formErr string) {
+		cals := h.fetchCalendars(r.Context(), user.ID)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fd := formDataFromRequest(r)
+		fd.Name = name
+		fd.SyncSchedule = syncSchedule
+		fmt.Fprint(w, configFormHTML("Edit Config", action, backURL, fd, formErr, true, cals, h.basePath)) //nolint:errcheck
+	}
+
+	if name == "" {
+		renderFormErr("Name is required.")
+		return
+	}
+
+	appCfg, err := formToAppConfig(r)
+	if err != nil {
+		renderFormErr(err.Error())
+		return
+	}
+	yamlContent, err := appCfg.ToYAML()
+	if err != nil {
+		renderFormErr("Failed to build config: " + err.Error())
 		return
 	}
 
@@ -485,6 +538,182 @@ type blockerItem struct {
 	ID      string `json:"id"`
 }
 
+// configFormData holds the structured fields for the config create/edit form.
+type configFormData struct {
+	Name          string
+	SchemaVersion string
+	LookbackDays  int
+	LookaheadDays int
+	CountryCode   string
+	CalendarID    string
+	Summary       string
+	Description   string
+	StartTime     string
+	EndTime       string
+	SyncSchedule  string
+	// Rules is the todayIsFreezeDayIf slice — each map has exactly one key (anchor) → conditions.
+	Rules []map[string][]string
+}
+
+// formRule is the JSON shape used by the JS rules builder.
+type formRule struct {
+	Anchor     string   `json:"anchor"`
+	Conditions []string `json:"conditions"`
+}
+
+func defaultFormData() configFormData {
+	return configFormData{
+		SchemaVersion: appconfig.CurrentSchemaVersion,
+		LookbackDays:  20,
+		LookaheadDays: 60,
+		CountryCode:   countryCodeJPN,
+		Summary:       "🚫 PRODUCTION FREEZE - No Deployments",
+		Description:   "Production operations restricted today.",
+		StartTime:     "08:00",
+		EndTime:       "20:00",
+		SyncSchedule:  db.SyncScheduleNone,
+		Rules: []map[string][]string{
+			{"today": {"isTheFirstBusinessDayOfTheMonth"}},
+			{"today": {"isTheLastBusinessDayOfTheMonth"}},
+			{"tomorrow": {"isNonBusinessDay"}},
+		},
+	}
+}
+
+// configToFormData converts a stored config + its parsed appconfig into form data.
+func configToFormData(cfg *db.Config, appCfg *appconfig.Config) configFormData {
+	data := configFormData{
+		Name:          cfg.Name,
+		SchemaVersion: cfg.SchemaVersion,
+		SyncSchedule:  cfg.SyncSchedule,
+		LookbackDays:  appCfg.Shared.LookbackDays,
+		LookaheadDays: appCfg.Shared.LookaheadDays,
+		CountryCode:   appCfg.ReadFrom.GoogleCalendar.CountryCode,
+		CalendarID:    appCfg.WriteTo.GoogleCalendar.ID,
+		Rules:         appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf,
+	}
+	d := appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default
+	if d.Summary != nil {
+		data.Summary = *d.Summary
+	}
+	if d.Description != nil {
+		data.Description = *d.Description
+	}
+	if d.StartTime != nil {
+		data.StartTime = *d.StartTime
+	}
+	if d.EndTime != nil {
+		data.EndTime = *d.EndTime
+	}
+	return data
+}
+
+// formToAppConfig builds a Config from the structured form POST fields.
+func formToAppConfig(r *http.Request) (*appconfig.Config, error) {
+	lookbackDays, err := strconv.Atoi(r.FormValue("lookback_days"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid lookback_days: must be a number")
+	}
+	lookaheadDays, err := strconv.Atoi(r.FormValue("lookahead_days"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid lookahead_days: must be a number")
+	}
+
+	rulesJSON := r.FormValue("rules_json")
+	if rulesJSON == "" {
+		return nil, fmt.Errorf("freeze rules are required")
+	}
+	var jsRules []formRule
+	if err := json.Unmarshal([]byte(rulesJSON), &jsRules); err != nil {
+		return nil, fmt.Errorf("invalid rules_json: %w", err)
+	}
+	if len(jsRules) == 0 {
+		return nil, fmt.Errorf("at least one freeze rule group is required")
+	}
+	rules := make([]map[string][]string, 0, len(jsRules))
+	for _, jr := range jsRules {
+		if len(jr.Conditions) == 0 {
+			return nil, fmt.Errorf("each rule group must have at least one condition")
+		}
+		rules = append(rules, map[string][]string{jr.Anchor: jr.Conditions})
+	}
+
+	summary := r.FormValue("event_summary")
+	description := r.FormValue("event_description")
+	startTime := r.FormValue("start_time")
+	endTime := r.FormValue("end_time")
+	calendarID := r.FormValue("write_calendar_id")
+	countryCode := r.FormValue("country_code")
+
+	cfg := &appconfig.Config{
+		Shared: appconfig.SharedConfig{
+			LookbackDays:  lookbackDays,
+			LookaheadDays: lookaheadDays,
+		},
+		ReadFrom: appconfig.ReadFromConfig{
+			GoogleCalendar: appconfig.GoogleCalendarReadConfig{
+				CountryCode:        countryCode,
+				TodayIsFreezeDayIf: rules,
+			},
+		},
+		WriteTo: appconfig.WriteToConfig{
+			GoogleCalendar: appconfig.GoogleCalendarWriteConfig{
+				ID: calendarID,
+				IfTodayIsFreezeDay: appconfig.IfTodayIsFreezeDayConfig{
+					Default: appconfig.DefaultConfig{
+						Summary:     helpers.StringPtr(summary),
+						Description: helpers.StringPtr(description),
+						StartTime:   helpers.StringPtr(startTime),
+						EndTime:     helpers.StringPtr(endTime),
+					},
+				},
+			},
+		},
+	}
+	cfg.SetDefault()
+	return cfg, nil
+}
+
+// rulesToJSON converts the todayIsFreezeDayIf slice to the JSON used by the JS rules builder.
+func rulesToJSON(rules []map[string][]string) string {
+	jsRules := make([]formRule, 0, len(rules))
+	for _, r := range rules {
+		for anchor, conditions := range r {
+			jsRules = append(jsRules, formRule{Anchor: anchor, Conditions: conditions})
+		}
+	}
+	b, _ := json.Marshal(jsRules) //nolint:errcheck
+	return string(b)
+}
+
+// formDataFromRequest rebuilds a configFormData from posted form values (for re-rendering on error).
+func formDataFromRequest(r *http.Request) configFormData {
+	lookback, _ := strconv.Atoi(r.FormValue("lookback_days"))
+	lookahead, _ := strconv.Atoi(r.FormValue("lookahead_days"))
+	var rules []map[string][]string
+	var jsRules []formRule
+	if err := json.Unmarshal([]byte(r.FormValue("rules_json")), &jsRules); err == nil {
+		for _, jr := range jsRules {
+			rules = append(rules, map[string][]string{jr.Anchor: jr.Conditions})
+		}
+	}
+	if len(rules) == 0 {
+		rules = defaultFormData().Rules
+	}
+	return configFormData{
+		SchemaVersion: appconfig.CurrentSchemaVersion,
+		LookbackDays:  lookback,
+		LookaheadDays: lookahead,
+		CountryCode:   r.FormValue("country_code"),
+		CalendarID:    r.FormValue("write_calendar_id"),
+		Summary:       r.FormValue("event_summary"),
+		Description:   r.FormValue("event_description"),
+		StartTime:     r.FormValue("start_time"),
+		EndTime:       r.FormValue("end_time"),
+		Rules:         rules,
+	}
+}
+
 func (h *ConfigHandler) listBlockers(ctx context.Context, userID int64, cfg *db.Config) string {
 	appCfg, err := h.parseAppConfig(cfg.ConfigYAML)
 	if err != nil {
@@ -606,42 +835,31 @@ func actionResultHTML(action, msg string, isErr bool) string {
 </div>`, bg, border, color, html.EscapeString(action), html.EscapeString(msg))
 }
 
-func calendarOptions(cals []*googlecalendar.CalendarItem) string {
+// calendarPickerHTML renders an optional dropdown that fills the calendar ID field when selected.
+func calendarPickerHTML(cals []*googlecalendar.CalendarItem, selectedID string) string {
 	if len(cals) == 0 {
 		return ""
 	}
 	var sb strings.Builder
-	sb.WriteString(`<option value="">-- select to fill calendar ID in YAML --</option>`)
+	sb.WriteString(`<option value="">-- pick to fill ID below --</option>`)
 	for _, c := range cals {
-		fmt.Fprintf(&sb, `<option value="%s">%s</option>`,
-			html.EscapeString(c.ID), html.EscapeString(c.Summary+" ("+c.ID+")"))
+		sel := ""
+		if c.ID == selectedID {
+			sel = " selected"
+		}
+		fmt.Fprintf(&sb, `<option value="%s"%s>%s</option>`,
+			html.EscapeString(c.ID), sel,
+			html.EscapeString(c.Summary+" ("+c.ID+")"))
 	}
-	opts := sb.String()
 	return fmt.Sprintf(`
-<details style="margin-bottom:1rem">
-  <summary style="cursor:pointer;font-weight:600">📅 Pick target calendar</summary>
-  <div style="margin-top:0.75rem">
-    <select id="cal-picker" onchange="applyCalendarId(this.value)">
+<div style="display:flex;gap:0.5rem;align-items:flex-end;margin-bottom:0.25rem">
+  <div style="flex:1">
+    <label for="cal-picker" style="margin-bottom:0.25rem;font-size:0.88rem;color:var(--pico-muted-color)">Pick from writable calendars</label>
+    <select id="cal-picker" onchange="document.getElementById('write_calendar_id').value=this.value;this.value=''">
       %s
     </select>
-    <small style="display:block;margin-top:0.4rem;color:var(--pico-muted-color)">Selecting a calendar inserts its ID into the YAML below.</small>
   </div>
-</details>
-<script>
-function applyCalendarId(id) {
-  if (!id) return;
-  var safeId = JSON.stringify(id); // safely quoted, no injection
-  var re = /(writeTo[\s\S]*?googleCalendar[\s\S]*?id:\s*)["']?[^\n"']*["']?/;
-  if (window.cmEditor) {
-    var updated = window.cmEditor.getValue().replace(re, '$1' + safeId);
-    window.cmEditor.setValue(updated);
-  } else {
-    var ta = document.getElementById('config_yaml');
-    ta.value = ta.value.replace(re, '$1' + safeId);
-  }
-  document.getElementById('cal-picker').value = '';
-}
-</script>`, opts)
+</div>`, sb.String())
 }
 
 func autoSyncInfoHTML(cfg *db.Config) string {
@@ -736,7 +954,6 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 	badge := statusBadgeHTML(cfg.Status, cfg.StatusMessage)
 	escapedName := html.EscapeString(cfg.Name)
 	escapedSchema := html.EscapeString(cfg.SchemaVersion)
-	escapedYAML := html.EscapeString(cfg.ConfigYAML)
 	canSync := role.CanSyncConfig(cfg.UserID, currentUserID)
 	canEdit := role.CanEditConfig(cfg.UserID, currentUserID)
 	autoSyncEnabled := cfg.SyncSchedule != db.SyncScheduleNone
@@ -757,7 +974,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
       hx-swap="innerHTML"
       hx-on::before-request="document.getElementById('action-result').innerHTML='<p class=ack>🔍 Validating&#8230;</p>';document.getElementById('status-badge').innerHTML='<em class=ack>checking&#8230;</em>'"
       class="outline"
-      title="Re-check the config YAML and verify calendar write access">
+      title="Re-validate the config and verify calendar write access">
       🔍 Validate
     </button>`, cfg.ID)
 
@@ -797,6 +1014,9 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 
 	autoSyncTrigger := autoSyncTriggerHTML(cfg, canEdit)
 
+	// Build human-readable config detail cards.
+	configCardsHTML := configDetailCardsHTML(cfg.ConfigYAML)
+
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -805,13 +1025,9 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/themes/prism-tomorrow.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.css">
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/plugins/line-numbers/prism-line-numbers.min.js" defer></script>
@@ -828,31 +1044,20 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
     .action-bar { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
     .action-bar button, .action-bar a[role=button] { margin:0; padding:0.45rem 1rem; font-size:0.88rem; }
     .ack { opacity:0.65; font-style:italic; padding:0.5rem 0; font-size:0.9rem; }
-    .CodeMirror { height: auto; font-size: 0.88rem; line-height: 1.5; border: 1px solid var(--pico-card-border-color); border-radius: 0.5rem; }
-    .CodeMirror-cursor { display: none !important; }
-    pre[class*="language-"] { line-height: 1.5 !important; white-space: pre-wrap; word-break: break-word; font-size: 0.84rem; border-radius: 0.5rem; }
+    .detail-card { background:var(--pico-card-background-color); border:1px solid var(--pico-card-border-color); border-radius:0.5rem; padding:0.9rem 1.1rem; margin-bottom:0.75rem; }
+    .detail-card h4 { margin:0 0 0.6rem; font-size:0.82rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--pico-muted-color); }
+    .detail-row { display:flex; gap:1rem; flex-wrap:wrap; }
+    .detail-field { flex:1; min-width:140px; }
+    .detail-field label { font-size:0.78rem; color:var(--pico-muted-color); display:block; margin-bottom:0.15rem; }
+    .detail-field .val { font-size:0.92rem; }
+    .rule-group { margin-bottom:0.4rem; padding:0.4rem 0.7rem; background:rgba(255,255,255,0.04); border-radius:0.35rem; font-size:0.88rem; }
+    pre[class*="language-"] { line-height:1.5 !important; white-space:pre-wrap; word-break:break-word; font-size:0.84rem; border-radius:0.5rem; }
     .line-numbers .line-numbers-rows > span::before { line-height: 1.5; }
     #blockers-panel pre { margin-top: 0.5rem; }
     #autosync-modal { position:fixed; top:50%%; left:50%%; transform:translate(-50%%,-50%%); margin:0; }
     #autosync-modal::backdrop { background:rgba(0,0,0,0.6); }
   </style>
-  <script>
-    document.addEventListener('htmx:afterSwap', function() { Prism.highlightAll(); });
-    document.addEventListener('DOMContentLoaded', function() {
-      var ta = document.getElementById('yaml-viewer');
-      if (ta && typeof CodeMirror !== 'undefined') {
-        CodeMirror.fromTextArea(ta, {
-          mode: 'yaml',
-          theme: 'dracula',
-          lineNumbers: true,
-          lineWrapping: true,
-          readOnly: true,
-          viewportMargin: Infinity,
-          cursorBlinkRate: -1
-        });
-      }
-    });
-  </script>
+  <script>document.addEventListener('htmx:afterSwap', function() { Prism.highlightAll(); });</script>
 </head>
 <body>
 <nav class="topnav">
@@ -889,12 +1094,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 
   <div id="action-result"></div>
 
-  <details open style="margin-top:1rem">
-    <summary style="cursor:pointer;font-weight:600">Config YAML</summary>
-    <div style="margin-top:0.5rem">
-      <textarea id="yaml-viewer" style="display:none">%s</textarea>
-    </div>
-  </details>
+  %s
 
   <div id="blockers-panel" style="margin-top:1.5rem"></div>
 </div>
@@ -909,9 +1109,125 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 		escapedSchema, badge, autoSyncTrigger,
 		autoSyncInfoHTML(cfg),
 		syncActionsHTML, cfg.ID,
-		escapedYAML,
+		configCardsHTML,
 		autoSyncModalHTML(basePath, cfg, canEdit),
 	)
+}
+
+// conditionLabel returns a human-readable label for a condition key.
+func conditionLabel(c string) string {
+	switch c {
+	case "isTheFirstBusinessDayOfTheMonth":
+		return "1st business day of month"
+	case "isTheLastBusinessDayOfTheMonth":
+		return "last business day of month"
+	case "isNonBusinessDay":
+		return "non-business day (weekend / holiday)"
+	default:
+		return c
+	}
+}
+
+// countryLabel returns a human-readable label for a country code.
+func countryLabel(code string) string {
+	switch code {
+	case countryCodeJPN:
+		return "Japan (jpn)"
+	case countryCodeVNM:
+		return "Vietnam (vnm)"
+	default:
+		return code
+	}
+}
+
+// configDetailCardsHTML renders human-readable detail cards from the stored YAML.
+// Falls back to a raw YAML display if parsing fails.
+func configDetailCardsHTML(yamlContent string) string {
+	appCfg, err := appconfig.LoadWithDefaultFromByteArray([]byte(yamlContent))
+	if err != nil {
+		return fmt.Sprintf(`<div class="detail-card"><h4>Config (parse error)</h4><pre style="white-space:pre-wrap;font-size:0.84rem">%s</pre></div>`,
+			html.EscapeString(err.Error()))
+	}
+
+	d := appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default
+
+	// Date range card
+	dateRangeCard := fmt.Sprintf(`
+<div class="detail-card">
+  <h4>Date Range</h4>
+  <div class="detail-row">
+    <div class="detail-field"><label>Lookback</label><div class="val">%d days</div></div>
+    <div class="detail-field"><label>Lookahead</label><div class="val">%d days</div></div>
+  </div>
+</div>`, appCfg.Shared.LookbackDays, appCfg.Shared.LookaheadDays)
+
+	// Holiday source card
+	holidayCard := fmt.Sprintf(`
+<div class="detail-card">
+  <h4>Holiday Source</h4>
+  <div class="detail-field"><label>Country</label><div class="val">%s</div></div>
+</div>`, html.EscapeString(countryLabel(appCfg.ReadFrom.GoogleCalendar.CountryCode)))
+
+	// Freeze rules card
+	var rulesSB strings.Builder
+	for _, rule := range appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf {
+		for anchor, conditions := range rule {
+			var condLabels []string
+			for _, c := range conditions {
+				condLabels = append(condLabels, conditionLabel(c))
+			}
+			fmt.Fprintf(&rulesSB, `<div class="rule-group"><strong>%s</strong> → %s</div>`,
+				html.EscapeString(anchor),
+				html.EscapeString(strings.Join(condLabels, ", ")))
+		}
+	}
+	freezeCard := fmt.Sprintf(`
+<div class="detail-card">
+  <h4>Freeze Rules</h4>
+  <div style="font-size:0.82rem;color:var(--pico-muted-color);margin-bottom:0.5rem">Today is a freeze day if:</div>
+  %s
+</div>`, rulesSB.String())
+
+	// Calendar card
+	calendarCard := fmt.Sprintf(`
+<div class="detail-card">
+  <h4>Target Calendar</h4>
+  <div class="detail-field"><label>Calendar ID</label><div class="val" style="word-break:break-all">%s</div></div>
+</div>`, html.EscapeString(appCfg.WriteTo.GoogleCalendar.ID))
+
+	// Blocker event card
+	summary := ""
+	description := ""
+	startTime := ""
+	endTime := ""
+	if d.Summary != nil {
+		summary = *d.Summary
+	}
+	if d.Description != nil {
+		description = *d.Description
+	}
+	if d.StartTime != nil {
+		startTime = *d.StartTime
+	}
+	if d.EndTime != nil {
+		endTime = *d.EndTime
+	}
+	eventCard := fmt.Sprintf(`
+<div class="detail-card">
+  <h4>Blocker Event</h4>
+  <div class="detail-field" style="margin-bottom:0.5rem"><label>Summary</label><div class="val">%s</div></div>
+  <div class="detail-field" style="margin-bottom:0.5rem"><label>Description</label><div class="val" style="font-size:0.85rem;white-space:pre-wrap">%s</div></div>
+  <div class="detail-row">
+    <div class="detail-field"><label>Start</label><div class="val">%s</div></div>
+    <div class="detail-field"><label>End</label><div class="val">%s</div></div>
+  </div>
+</div>`,
+		html.EscapeString(summary),
+		html.EscapeString(description),
+		html.EscapeString(startTime),
+		html.EscapeString(endTime))
+
+	return dateRangeCard + holidayCard + freezeCard + calendarCard + eventCard
 }
 
 func syncScheduleOptions(selected string) string {
@@ -934,7 +1250,7 @@ func syncScheduleOptions(selected string) string {
 	return sb.String()
 }
 
-func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, _ /* schemaYAML */, formErr string, isEdit bool, syncSchedule string, cals []*googlecalendar.CalendarItem, basePath string) string {
+func configFormHTML(title, action, backURL string, data configFormData, formErr string, isEdit bool, cals []*googlecalendar.CalendarItem, basePath string) string {
 	errHTML := ""
 	if formErr != "" {
 		errHTML = fmt.Sprintf(`<div style="background:#4a1122;border:1px solid #7f1d1d;color:#f87171;padding:0.75rem 1rem;border-radius:0.5rem;margin-bottom:1rem">%s</div>`,
@@ -944,34 +1260,11 @@ func configFormHTML(title, action, backURL, schemaVersion, name, yamlContent, _ 
 	var breadcrumb, pageHeader string
 	if isEdit {
 		breadcrumb = fmt.Sprintf(`<a href="`+basePath+`/dashboard">Configs</a> &rsaquo; <a href="%s">%s</a> &rsaquo; Edit`,
-			html.EscapeString(backURL), html.EscapeString(name))
-		pageHeader = fmt.Sprintf(`Edit: %s`, html.EscapeString(name))
+			html.EscapeString(backURL), html.EscapeString(data.Name))
+		pageHeader = fmt.Sprintf(`Edit: %s`, html.EscapeString(data.Name))
 	} else {
 		breadcrumb = `<a href="` + basePath + `/dashboard">Configs</a> &rsaquo; New Config`
 		pageHeader = `New Config`
-	}
-
-	defaultYAML := `shared:
-  lookbackDays: 20
-  lookaheadDays: 20
-
-readFrom:
-  googleCalendar:
-    countryCode: "jpn"
-    todayIsFreezeDayIf:
-    - today:
-      - isTheFirstBusinessDayOfTheMonth
-    - today:
-      - isTheLastBusinessDayOfTheMonth
-    - tomorrow:
-      - isNonBusinessDay
-
-writeTo:
-  googleCalendar:
-    id: "ngo.van.anh.tuan@moneyforward.co.jp"`
-
-	if yamlContent == "" {
-		yamlContent = defaultYAML
 	}
 
 	deleteBtn := ""
@@ -980,26 +1273,15 @@ writeTo:
 			html.EscapeString(action))
 	}
 
-	calPicker := calendarOptions(cals)
+	calPicker := calendarPickerHTML(cals, data.CalendarID)
 
 	schemaPicker := fmt.Sprintf(`
-<label for="schema_version">Schema Version
-  <div style="display:flex;align-items:center;gap:0.5rem">
-    <select id="schema_version" name="schema_version" style="flex:1;margin:0">
-      <option value="v1"%s>v1 (current)</option>
-    </select>
-    <a href="`+basePath+`/schema/%s" target="_blank" title="View schema reference for %s"
-       style="font-size:1.1rem;text-decoration:none;flex-shrink:0">ℹ️</a>
-  </div>
-</label>`,
-		func() string {
-			if schemaVersion == "v1" {
-				return " selected"
-			}
-			return ""
-		}(),
-		html.EscapeString(schemaVersion),
-		html.EscapeString(schemaVersion),
+<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
+  <span style="font-size:0.88rem;color:var(--pico-muted-color)">Schema: <strong>%s</strong></span>
+  <a href="`+basePath+`/schema/%s" target="_blank" title="View schema reference" style="font-size:1rem;text-decoration:none">ℹ️</a>
+</div>`,
+		html.EscapeString(data.SchemaVersion),
+		html.EscapeString(data.SchemaVersion),
 	)
 
 	autoSyncPicker := fmt.Sprintf(`
@@ -1008,7 +1290,25 @@ writeTo:
     %s
   </select>
   <small style="color:var(--pico-muted-color)">Weekly fires every Monday 09:00 JST. Monthly fires on the 1st at 09:00 JST. When enabled, manual Sync and Wipe are disabled.</small>
-</label>`, syncScheduleOptions(syncSchedule))
+</label>`, syncScheduleOptions(data.SyncSchedule))
+
+	// Country select
+	countryOptions := ""
+	for _, cc := range []struct{ val, label string }{
+		{countryCodeJPN, "Japan (jpn)"},
+		{countryCodeVNM, "Vietnam (vnm)"},
+	} {
+		sel := ""
+		if cc.val == data.CountryCode {
+			sel = " selected"
+		}
+		countryOptions += fmt.Sprintf(`<option value="%s"%s>%s</option>`, cc.val, sel, cc.label)
+	}
+
+	initialRulesJSON := rulesToJSON(data.Rules)
+	if initialRulesJSON == "null" || initialRulesJSON == "" {
+		initialRulesJSON = "[]"
+	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -1018,32 +1318,26 @@ writeTo:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>%s &#8211; TGI Freeze Day</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
   <style>
-    nav.topnav { background: var(--pico-card-background-color); border-bottom: 1px solid var(--pico-card-border-color); padding: 0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
+    nav.topnav { background:var(--pico-card-background-color); border-bottom:1px solid var(--pico-card-border-color); padding:0.75rem 1.5rem; display:flex; align-items:center; justify-content:space-between; }
     nav.topnav .brand { font-weight:700; text-decoration:none; color:inherit; }
-    .page-content { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
+    .page-content { max-width:760px; margin:2rem auto; padding:0 1.5rem; }
     .breadcrumb { font-size:0.82rem; color:var(--pico-muted-color); margin-bottom:0.4rem; }
     .breadcrumb a { color:var(--pico-muted-color); text-decoration:none; }
     .breadcrumb a:hover { text-decoration:underline; }
     .back-btn { font-size:1.4rem; text-decoration:none; color:var(--pico-muted-color); line-height:1; flex-shrink:0; }
     .back-btn:hover { color:var(--pico-color); }
     .form-actions { display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; }
-    .form-actions button, .form-actions a[role=button] { margin:0; width:auto; padding:0.45rem 1.1rem; font-size:0.9rem; }
-    .CodeMirror {
-      height: 480px;
-      font-size: 0.88rem;
-      font-family: monospace;
-      border: 1px solid var(--pico-form-element-border-color);
-      border-radius: var(--pico-border-radius);
-      line-height: 1.5;
-    }
-    .CodeMirror-scroll { padding-bottom: 0.5rem; }
-    label.yaml-label { display:block; margin-bottom:0.25rem; font-weight:500; }
+    .form-actions button,.form-actions a[role=button] { margin:0; width:auto; padding:0.45rem 1.1rem; font-size:0.9rem; }
+    .section-header { font-size:0.78rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--pico-muted-color); border-bottom:1px solid var(--pico-card-border-color); padding-bottom:0.3rem; margin:1.25rem 0 0.75rem; }
+    .two-col { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; }
+    .rule-group-box { background:var(--pico-card-background-color); border:1px solid var(--pico-card-border-color); border-radius:0.4rem; padding:0.65rem 0.75rem; margin-bottom:0.5rem; }
+    .rule-cond-row { display:flex; align-items:center; gap:0.5rem; margin-bottom:0.35rem; }
+    .rule-cond-row select { flex:1; margin:0; padding:0.3rem 0.5rem; font-size:0.85rem; }
+    .rule-cond-row button { margin:0; padding:0.25rem 0.55rem; font-size:0.8rem; }
+    .btn-small { padding:0.3rem 0.65rem !important; font-size:0.82rem !important; }
+    .or-divider { text-align:center; font-size:0.8rem; color:var(--pico-muted-color); margin:0.25rem 0; }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/yaml/yaml.min.js"></script>
 </head>
 <body>
 <nav class="topnav">
@@ -1062,13 +1356,60 @@ writeTo:
       <input type="text" id="name" name="name" value="%s" placeholder="e.g. Japan prod freeze" required>
     </label>
     %s
-    %s
-    %s
-    <div style="margin-bottom:1rem">
-      <label class="yaml-label" for="config_yaml">Config YAML</label>
-      <textarea id="config_yaml" name="config_yaml" style="display:none">%s</textarea>
+
+    <div class="section-header">Date Range</div>
+    <div class="two-col">
+      <label for="lookback_days">Lookback days
+        <input type="number" id="lookback_days" name="lookback_days" value="%d" min="20" max="60" required>
+        <small style="color:var(--pico-muted-color)">20–60</small>
+      </label>
+      <label for="lookahead_days">Lookahead days
+        <input type="number" id="lookahead_days" name="lookahead_days" value="%d" min="20" max="60" required>
+        <small style="color:var(--pico-muted-color)">20–60</small>
+      </label>
     </div>
-    <div class="form-actions">
+
+    <div class="section-header">Holiday Source</div>
+    <label for="country_code">Country
+      <select id="country_code" name="country_code">%s</select>
+    </label>
+
+    <div class="section-header">Freeze Rules</div>
+    <p style="font-size:0.85rem;color:var(--pico-muted-color);margin-bottom:0.75rem">
+      Today is a freeze day if <em>any</em> rule group matches (OR). Within a group, <em>all</em> conditions must match (AND).
+    </p>
+    <div id="rules-container"></div>
+    <button type="button" class="outline btn-small" onclick="addRuleGroup()" style="margin-bottom:1rem">+ OR group</button>
+    <input type="hidden" id="rules_json" name="rules_json">
+
+    <div class="section-header">Target Calendar</div>
+    %s
+    <label for="write_calendar_id">Calendar ID
+      <input type="text" id="write_calendar_id" name="write_calendar_id" value="%s" placeholder="team-cal@group.calendar.google.com" required>
+    </label>
+
+    <div class="section-header">Blocker Event</div>
+    <label for="event_summary">Summary
+      <input type="text" id="event_summary" name="event_summary" value="%s" maxlength="250" placeholder="🚫 PRODUCTION FREEZE - No Deployments" required>
+      <small style="color:var(--pico-muted-color)">Max 250 characters</small>
+    </label>
+    <label for="event_description">Description
+      <textarea id="event_description" name="event_description" rows="4" maxlength="8000" placeholder="Production operations restricted today.">%s</textarea>
+      <small style="color:var(--pico-muted-color)">HTML supported: &lt;br&gt;, &lt;ul&gt;&lt;li&gt;, &lt;a href=""&gt;, &lt;strong&gt;, &lt;em&gt;. Max 8000 characters.</small>
+    </label>
+    <div class="two-col">
+      <label for="start_time">Start time
+        <input type="time" id="start_time" name="start_time" value="%s" required>
+      </label>
+      <label for="end_time">End time
+        <input type="time" id="end_time" name="end_time" value="%s" required>
+      </label>
+    </div>
+
+    <div class="section-header">Auto-Sync</div>
+    %s
+
+    <div class="form-actions" style="margin-top:1.5rem">
       <button type="submit">Save</button>
       %s
       <a href="%s" role="button" class="outline secondary">Cancel</a>
@@ -1076,19 +1417,95 @@ writeTo:
   </form>
 </div>
 <script>
-window.cmEditor = CodeMirror.fromTextArea(document.getElementById('config_yaml'), {
-  mode: 'yaml',
-  theme: 'dracula',
-  lineNumbers: true,
-  lineWrapping: true,
-  tabSize: 2,
-  indentWithTabs: false,
-  autofocus: false,
-  extraKeys: { Tab: function(cm) { cm.replaceSelection('  '); } }
-});
+var ANCHORS = [
+  {value:'today', label:'today'},
+  {value:'tomorrow', label:'tomorrow'},
+  {value:'nextDay', label:'next day'}
+];
+var CONDITIONS = [
+  {value:'isTheFirstBusinessDayOfTheMonth', label:'1st business day of month'},
+  {value:'isTheLastBusinessDayOfTheMonth', label:'last business day of month'},
+  {value:'isNonBusinessDay', label:'non-business day (weekend / holiday)'}
+];
+
+var rules = %s;
+if (!Array.isArray(rules) || rules.length === 0) {
+  rules = [{anchor:'today', conditions:['isTheFirstBusinessDayOfTheMonth']}];
+}
+
+function anchorSelect(groupIdx, val) {
+  var s = '<select onchange="rules['+groupIdx+'].anchor=this.value">';
+  ANCHORS.forEach(function(a) {
+    s += '<option value="'+a.value+'"'+(a.value===val?' selected':'')+'>'+a.label+'</option>';
+  });
+  return s+'</select>';
+}
+
+function condSelect(groupIdx, condIdx, val) {
+  var s = '<select onchange="rules['+groupIdx+'].conditions['+condIdx+']=this.value">';
+  CONDITIONS.forEach(function(c) {
+    s += '<option value="'+c.value+'"'+(c.value===val?' selected':'')+'>'+c.label+'</option>';
+  });
+  return s+'</select>';
+}
+
+function renderRules() {
+  var container = document.getElementById('rules-container');
+  var html = '';
+  rules.forEach(function(group, gi) {
+    html += '<div class="rule-group-box">';
+    html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">';
+    html += anchorSelect(gi, group.anchor);
+    html += '<span style="font-size:0.85rem;color:var(--pico-muted-color)">is:</span>';
+    if (rules.length > 1) {
+      html += '<button type="button" class="outline contrast btn-small" style="margin-left:auto" onclick="removeGroup('+gi+')" title="Remove this OR group">✕ group</button>';
+    }
+    html += '</div>';
+    group.conditions.forEach(function(cond, ci) {
+      html += '<div class="rule-cond-row">';
+      html += '<span style="font-size:0.8rem;color:var(--pico-muted-color);flex-shrink:0">—</span>';
+      html += condSelect(gi, ci, cond);
+      if (group.conditions.length > 1) {
+        html += '<button type="button" class="outline btn-small" onclick="removeCond('+gi+','+ci+')" title="Remove condition">✕</button>';
+      }
+      html += '</div>';
+    });
+    html += '<button type="button" class="outline btn-small" onclick="addCond('+gi+')" style="margin-top:0.25rem">+ AND condition</button>';
+    html += '</div>';
+    if (gi < rules.length - 1) {
+      html += '<div class="or-divider">— or —</div>';
+    }
+  });
+  container.innerHTML = html;
+}
+
+function addRuleGroup() {
+  rules.push({anchor:'today', conditions:['isTheFirstBusinessDayOfTheMonth']});
+  renderRules();
+}
+
+function removeGroup(gi) {
+  if (rules.length <= 1) return;
+  rules.splice(gi, 1);
+  renderRules();
+}
+
+function addCond(gi) {
+  rules[gi].conditions.push('isTheFirstBusinessDayOfTheMonth');
+  renderRules();
+}
+
+function removeCond(gi, ci) {
+  if (rules[gi].conditions.length <= 1) return;
+  rules[gi].conditions.splice(ci, 1);
+  renderRules();
+}
+
 document.getElementById('config-form').addEventListener('submit', function() {
-  window.cmEditor.save();
+  document.getElementById('rules_json').value = JSON.stringify(rules);
 });
+
+renderRules();
 </script>
 `+pageFooterHTML()+`
 </body>
@@ -1100,12 +1517,20 @@ document.getElementById('config-form').addEventListener('submit', function() {
 		pageHeader,
 		errHTML,
 		html.EscapeString(action),
-		html.EscapeString(name),
+		html.EscapeString(data.Name),
 		schemaPicker,
-		autoSyncPicker,
+		data.LookbackDays,
+		data.LookaheadDays,
+		countryOptions,
 		calPicker,
-		html.EscapeString(yamlContent),
+		html.EscapeString(data.CalendarID),
+		html.EscapeString(data.Summary),
+		html.EscapeString(data.Description),
+		data.StartTime,
+		data.EndTime,
+		autoSyncPicker,
 		deleteBtn,
 		html.EscapeString(backURL),
+		initialRulesJSON,
 	)
 }
