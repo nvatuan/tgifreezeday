@@ -1233,14 +1233,18 @@ func configDetailCardsHTML(appCfg *appconfig.Config, calendarName string) string
 
 	// Calendar card — show friendly name when available.
 	calID := appCfg.WriteTo.GoogleCalendar.ID
-	calDisplay := html.EscapeString(calID)
+	var calDisplay string
 	if calendarName != "" {
-		calDisplay = fmt.Sprintf("%s (%s)", html.EscapeString(calendarName), html.EscapeString(calID))
+		calDisplay = `<strong>` + html.EscapeString(calendarName) + `</strong>` +
+			`<div style="font-size:0.8rem;color:var(--pico-muted-color);word-break:break-all;margin-top:0.2rem">` + html.EscapeString(calID) + `</div>`
+	} else {
+		calDisplay = `<span style="color:var(--pico-muted-color);font-size:0.85rem">(name unavailable)</span>` +
+			`<div style="font-size:0.8rem;color:var(--pico-muted-color);word-break:break-all;margin-top:0.2rem">` + html.EscapeString(calID) + `</div>`
 	}
 	calendarCard := fmt.Sprintf(`
 <div class="detail-card">
   <h4>Target Calendar</h4>
-  <div class="detail-field"><div class="val" style="word-break:break-all">%s</div></div>
+  <div class="detail-field"><div class="val">%s</div></div>
 </div>`, calDisplay)
 
 	// Blocker event card
@@ -1333,10 +1337,12 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
 	allDayChecked := ""
 	timeFieldsStyle := ""
 	timeRequired := " required"
+	timeDisabled := ""
 	if data.AllDay {
 		allDayChecked = " checked"
-		timeFieldsStyle = `style="display:none"`
+		timeFieldsStyle = `style="opacity:0.4;pointer-events:none"`
 		timeRequired = ""
+		timeDisabled = " disabled"
 	}
 
 	autoSyncPicker := fmt.Sprintf(`
@@ -1451,17 +1457,20 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
       <textarea id="event_description" name="event_description" rows="4" maxlength="8000" placeholder="Production operations restricted today.">%s</textarea>
       <small style="color:var(--pico-muted-color)">HTML supported: &lt;br&gt;, &lt;ul&gt;&lt;li&gt;, &lt;a href=""&gt;, &lt;strong&gt;, &lt;em&gt;. Max 8000 characters.</small>
     </label>
-    <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;cursor:pointer">
-      <input type="checkbox" id="all_day" name="all_day" onchange="toggleAllDay(this)"%s style="margin:0;width:auto">
-      All-day event
-    </label>
+    <div style="margin-bottom:1rem">
+      <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;font-weight:500">
+        <input type="checkbox" id="all_day" name="all_day" onchange="toggleAllDay(this)" style="width:1.1rem;height:1.1rem;cursor:pointer"%s>
+        All-day event
+      </label>
+      <small style="color:var(--pico-muted-color);display:block;margin-top:0.25rem">Creates a full-day calendar event instead of a timed one</small>
+    </div>
     <div id="time-fields" %s>
-      <div class="two-col">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
         <label for="start_time">Start time
-          <input type="time" id="start_time" name="start_time" value="%s"%s>
+          <input type="time" id="start_time" name="start_time" value="%s"%s%s>
         </label>
         <label for="end_time">End time
-          <input type="time" id="end_time" name="end_time" value="%s"%s>
+          <input type="time" id="end_time" name="end_time" value="%s"%s%s>
         </label>
       </div>
     </div>
@@ -1562,19 +1571,29 @@ function removeCond(gi, ci) {
 }
 
 function toggleAllDay(cb) {
-  var tf = document.getElementById('time-fields');
-  var st = document.getElementById('start_time');
-  var et = document.getElementById('end_time');
+  var container = document.getElementById('time-fields');
+  var inputs = container.querySelectorAll('input[type=time]');
   if (cb.checked) {
-    tf.style.display = 'none';
-    st.removeAttribute('required');
-    et.removeAttribute('required');
+    container.style.opacity = '0.4';
+    container.style.pointerEvents = 'none';
+    inputs.forEach(function(inp) {
+      inp.disabled = true;
+      inp.removeAttribute('required');
+    });
   } else {
-    tf.style.display = '';
-    st.setAttribute('required', '');
-    et.setAttribute('required', '');
+    container.style.opacity = '1';
+    container.style.pointerEvents = '';
+    inputs.forEach(function(inp) {
+      inp.disabled = false;
+      inp.setAttribute('required', '');
+    });
   }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+  var cb = document.getElementById('all_day');
+  if (cb && cb.checked) toggleAllDay(cb);
+});
 
 document.getElementById('config-form').addEventListener('submit', function() {
   document.getElementById('rules_json').value = JSON.stringify(rules);
@@ -1603,8 +1622,10 @@ renderRules();
 		allDayChecked,
 		timeFieldsStyle,
 		html.EscapeString(data.StartTime),
+		timeDisabled,
 		timeRequired,
 		html.EscapeString(data.EndTime),
+		timeDisabled,
 		timeRequired,
 		autoSyncPicker,
 		deleteBtn,
