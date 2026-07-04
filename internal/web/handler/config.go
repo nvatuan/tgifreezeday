@@ -1157,6 +1157,16 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 	)
 }
 
+// sectionHeaderHTML renders a section divider with an optional (?) tooltip.
+func sectionHeaderHTML(label, tooltip string) string {
+	tipHTML := ""
+	if tooltip != "" {
+		tipHTML = fmt.Sprintf(` <span title="%s" style="cursor:help;font-weight:normal;font-size:0.82rem;opacity:0.6;margin-left:0.3rem">(?)</span>`,
+			html.EscapeString(tooltip))
+	}
+	return fmt.Sprintf(`<div class="section-header">%s%s</div>`, html.EscapeString(label), tipHTML)
+}
+
 // conditionLabel returns a human-readable label for a condition key.
 func conditionLabel(c string) string {
 	switch c {
@@ -1197,7 +1207,7 @@ func configDetailCardsHTML(appCfg *appconfig.Config, calendarName string) string
 	// Date range card
 	dateRangeCard := fmt.Sprintf(`
 <div class="detail-card">
-  <h4>Date Range</h4>
+  <h4>Date Range <span title="How far back and forward to scan for freeze days." style="cursor:help;font-weight:normal;font-size:0.8rem;opacity:0.5">(?)</span></h4>
   <div class="detail-row">
     <div class="detail-field"><label>Lookback</label><div class="val">%d days</div></div>
     <div class="detail-field"><label>Lookahead</label><div class="val">%d days</div></div>
@@ -1207,26 +1217,29 @@ func configDetailCardsHTML(appCfg *appconfig.Config, calendarName string) string
 	// Holiday source card
 	holidayCard := fmt.Sprintf(`
 <div class="detail-card">
-  <h4>Holiday Source</h4>
+  <h4>Holiday Source <span title="The public holiday calendar to read from, used to identify non-business days." style="cursor:help;font-weight:normal;font-size:0.8rem;opacity:0.5">(?)</span></h4>
   <div class="detail-field"><label>Country</label><div class="val">%s</div></div>
 </div>`, html.EscapeString(countryLabel(appCfg.ReadFrom.GoogleCalendar.CountryCode)))
 
 	// Freeze rules card
 	var rulesSB strings.Builder
-	for _, rule := range appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf {
+	for i, rule := range appCfg.ReadFrom.GoogleCalendar.TodayIsFreezeDayIf {
+		if i > 0 {
+			rulesSB.WriteString(`<div style="font-size:0.78rem;font-weight:700;color:#60a5fa;text-align:center;margin:0.3rem 0;letter-spacing:0.05em">OR</div>`)
+		}
 		for anchor, conditions := range rule {
-			var condLabels []string
+			var condParts []string
 			for _, c := range conditions {
-				condLabels = append(condLabels, conditionLabel(c))
+				condParts = append(condParts, html.EscapeString(conditionLabel(c)))
 			}
-			fmt.Fprintf(&rulesSB, `<div class="rule-group"><strong>%s</strong> → %s</div>`,
-				html.EscapeString(anchor),
-				html.EscapeString(strings.Join(condLabels, ", ")))
+			condHTML := strings.Join(condParts, ` <span style="font-size:0.75rem;font-weight:700;color:#a78bfa;margin:0 0.2rem">AND</span> `)
+			fmt.Fprintf(&rulesSB, `<div class="rule-group"><strong>%s</strong> <span style="color:var(--pico-muted-color);font-size:0.82rem">is:</span> %s</div>`,
+				html.EscapeString(anchor), condHTML)
 		}
 	}
 	freezeCard := fmt.Sprintf(`
 <div class="detail-card">
-  <h4>Freeze Rules</h4>
+  <h4>Freeze Rules <span title="Today is a freeze day if any group matches (OR). Within a group, all conditions must match (AND)." style="cursor:help;font-weight:normal;font-size:0.8rem;opacity:0.5">(?)</span></h4>
   <div style="font-size:0.82rem;color:var(--pico-muted-color);margin-bottom:0.5rem">Today is a freeze day if:</div>
   %s
 </div>`, rulesSB.String())
@@ -1243,7 +1256,7 @@ func configDetailCardsHTML(appCfg *appconfig.Config, calendarName string) string
 	}
 	calendarCard := fmt.Sprintf(`
 <div class="detail-card">
-  <h4>Target Calendar</h4>
+  <h4>Target Calendar <span title="The Google Calendar where blocker events are written on freeze days." style="cursor:help;font-weight:normal;font-size:0.8rem;opacity:0.5">(?)</span></h4>
   <div class="detail-field"><div class="val">%s</div></div>
 </div>`, calDisplay)
 
@@ -1277,7 +1290,7 @@ func configDetailCardsHTML(appCfg *appconfig.Config, calendarName string) string
 	}
 	eventCard := fmt.Sprintf(`
 <div class="detail-card">
-  <h4>Blocker Event</h4>
+  <h4>Blocker Event <span title="The calendar event created on each freeze day to signal no deployments allowed." style="cursor:help;font-weight:normal;font-size:0.8rem;opacity:0.5">(?)</span></h4>
   <div class="detail-field" style="margin-bottom:0.5rem"><label>Summary</label><div class="val">%s</div></div>
   <div class="detail-field" style="margin-bottom:0.5rem"><label>Description</label><div class="val" style="font-size:0.85rem;white-space:pre-wrap">%s</div></div>
   %s
@@ -1417,7 +1430,7 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
       <input type="text" id="name" name="name" value="%s" placeholder="e.g. Japan prod freeze" required>
     </label>
 
-    <div class="section-header">Date Range</div>
+    `+sectionHeaderHTML("Date Range", "How far back and forward to scan for freeze days. Lookback covers past days already elapsed; lookahead covers upcoming days.")+`
     <div class="two-col">
       <label for="lookback_days">Lookback days
         <input type="number" id="lookback_days" name="lookback_days" value="%d" min="20" max="60" required>
@@ -1429,12 +1442,12 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
       </label>
     </div>
 
-    <div class="section-header">Holiday Source</div>
+    `+sectionHeaderHTML("Holiday Source", "The public holiday calendar to read from. Used to identify non-business days (weekends + public holidays) in the target country.")+`
     <label for="country_code">Country
       <select id="country_code" name="country_code">%s</select>
     </label>
 
-    <div class="section-header">Freeze Rules</div>
+    `+sectionHeaderHTML("Freeze Rules", "Defines when today counts as a freeze day. Groups are OR'd — if any group matches, today is a freeze day. Within a group, all conditions must match (AND).")+`
     <p style="font-size:0.85rem;color:var(--pico-muted-color);margin-bottom:0.75rem">
       Today is a freeze day if <em>any</em> rule group matches (OR). Within a group, <em>all</em> conditions must match (AND).
     </p>
@@ -1442,13 +1455,13 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
     <button type="button" class="outline btn-small" onclick="addRuleGroup()" style="margin-bottom:1rem">+ OR group</button>
     <input type="hidden" id="rules_json" name="rules_json">
 
-    <div class="section-header">Target Calendar</div>
+    `+sectionHeaderHTML("Target Calendar", "The Google Calendar where blocker events will be written on freeze days. Must be a calendar you have write access to.")+`
     %s
     <label for="write_calendar_id">Calendar ID
       <input type="text" id="write_calendar_id" name="write_calendar_id" value="%s" placeholder="team-cal@group.calendar.google.com" required>
     </label>
 
-    <div class="section-header">Blocker Event</div>
+    `+sectionHeaderHTML("Blocker Event", "The calendar event created on each freeze day. Title and description appear in Google Calendar to signal no deployments allowed.")+`
     <label for="event_summary">Summary
       <input type="text" id="event_summary" name="event_summary" value="%s" maxlength="250" placeholder="🚫 PRODUCTION FREEZE - No Deployments" required>
       <small style="color:var(--pico-muted-color)">Max 250 characters</small>
@@ -1475,7 +1488,7 @@ func configFormHTML(title, action, backURL string, data configFormData, formErr 
       </div>
     </div>
 
-    <div class="section-header">Auto-Sync</div>
+    `+sectionHeaderHTML("Auto-Sync", "Runs Sync automatically on a schedule so you don't have to click manually. When enabled, manual Sync and Wipe are disabled to prevent conflicts.")+`
     %s
 
     <div class="form-actions" style="margin-top:1.5rem">
@@ -1532,17 +1545,21 @@ function renderRules() {
     html += '</div>';
     group.conditions.forEach(function(cond, ci) {
       html += '<div class="rule-cond-row">';
-      html += '<span style="font-size:0.8rem;color:var(--pico-muted-color);flex-shrink:0">—</span>';
+      if (ci === 0) {
+        html += '<span style="font-size:0.8rem;color:var(--pico-muted-color);flex-shrink:0;min-width:2.5rem">is:</span>';
+      } else {
+        html += '<span style="font-size:0.75rem;font-weight:700;color:#a78bfa;flex-shrink:0;min-width:2.5rem">AND</span>';
+      }
       html += condSelect(gi, ci, cond);
       if (group.conditions.length > 1) {
         html += '<button type="button" class="outline btn-small" onclick="removeCond('+gi+','+ci+')" title="Remove condition">✕</button>';
       }
       html += '</div>';
     });
-    html += '<button type="button" class="outline btn-small" onclick="addCond('+gi+')" style="margin-top:0.25rem">+ AND condition</button>';
+    html += '<button type="button" class="outline btn-small" onclick="addCond('+gi+')" style="margin-top:0.25rem;margin-left:2.9rem">+ AND condition</button>';
     html += '</div>';
     if (gi < rules.length - 1) {
-      html += '<div class="or-divider">— or —</div>';
+      html += '<div class="or-divider" style="font-weight:700;color:#60a5fa;letter-spacing:0.08em">— OR —</div>';
     }
   });
   container.innerHTML = html;
