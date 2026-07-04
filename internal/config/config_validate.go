@@ -131,6 +131,12 @@ func (c *Config) SetDefaultAndValidateWriteToGoogleCalendarIfTodayIsFreezeDay() 
 		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.description cannot be longer than 8000 characters")
 	}
 
+	// All-day events do not use startTime/endTime — skip time validation.
+	allDay := c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.AllDay
+	if allDay != nil && *allDay {
+		return nil
+	}
+
 	startT, err := parseHHMM(*c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime)
 	if err != nil {
 		return fmt.Errorf("writeTo.googleCalendar.ifTodayIsFreezeDay.default.startTime: %w", err)

@@ -36,10 +36,11 @@ type IfTodayIsFreezeDayConfig struct {
 }
 
 type DefaultConfig struct {
-	Summary     *string `yaml:"summary"`
-	Description *string `yaml:"description"`
-	StartTime   *string `yaml:"startTime"`
-	EndTime     *string `yaml:"endTime"`
+	Summary     *string `yaml:"summary,omitempty"`
+	Description *string `yaml:"description,omitempty"`
+	StartTime   *string `yaml:"startTime,omitempty"`
+	EndTime     *string `yaml:"endTime,omitempty"`
+	AllDay      *bool   `yaml:"allDay,omitempty"`
 }
 
 type Config struct {
@@ -61,6 +62,15 @@ func LoadWithDefaultFromByteArray(data []byte) (*Config, error) {
 const defaultSummary = "Today is FREEZE-DAY. no PROD operation is allowed."
 const defaultDescription = "Managed by tgifreezeday, do not modify."
 
+// ToYAML marshals the config back to YAML bytes.
+func (c *Config) ToYAML() (string, error) {
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal config to YAML: %w", err)
+	}
+	return string(data), nil
+}
+
 func (c *Config) SetDefault() {
 	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary == nil {
 		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Summary = helpers.StringPtr(defaultSummary)
@@ -68,10 +78,14 @@ func (c *Config) SetDefault() {
 	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description == nil {
 		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.Description = helpers.StringPtr(defaultDescription)
 	}
-	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime == nil {
-		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime = helpers.StringPtr("08:00")
-	}
-	if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime == nil {
-		c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime = helpers.StringPtr("20:00")
+	// Only set time defaults for timed (non-all-day) events.
+	allDay := c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.AllDay
+	if allDay == nil || !*allDay {
+		if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime == nil {
+			c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.StartTime = helpers.StringPtr("08:00")
+		}
+		if c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime == nil {
+			c.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default.EndTime = helpers.StringPtr("20:00")
+		}
 	}
 }

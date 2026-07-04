@@ -14,6 +14,7 @@ func RunSync(
 	rangeStart, rangeEnd time.Time,
 	rules TodayIsFreezeDayIf,
 	summary, description, startTime, endTime string,
+	allDay bool,
 ) (string, bool) {
 	tgifMapping, err := repo.GetFreezeDaysInRange(rangeStart, rangeEnd)
 	if err != nil {
@@ -25,7 +26,7 @@ func RunSync(
 	count := 0
 	for _, day := range *tgifMapping {
 		if day.IsTodayFreezeDay(rules) {
-			if err := repo.WriteBlockerOnDate(day.Date, summary, description, startTime, endTime); err != nil {
+			if err := repo.WriteBlockerOnDate(day.Date, summary, description, startTime, endTime, allDay); err != nil {
 				return fmt.Sprintf("failed to write blocker on %s: %s", day.Date.Format("2006-01-02"), err.Error()), true
 			}
 			count++

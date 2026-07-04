@@ -220,8 +220,32 @@ func (r *Repository) ListAllBlockersInRange(startDate, endDate time.Time) ([]*Bl
 	return blockers, nil
 }
 
-func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description, startTime, endTime string) error {
-	// Convert to calendar timezone for proper display
+func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description, startTime, endTime string, allDay bool) error {
+	// Combine custom description with signature for identification.
+	var finalDescription string
+	if description == "" || description == defaultBlockerSignature {
+		finalDescription = defaultBlockerSignature
+	} else {
+		finalDescription = description + defaultBlockerSignature
+	}
+
+	if allDay {
+		calendarDate := date.In(r.calendarTZ)
+		dateStr := calendarDate.Format("2006-01-02")
+		nextDateStr := calendarDate.AddDate(0, 0, 1).Format("2006-01-02")
+		call := r.service.Events.Insert(r.writeCalendarID, &calendar.Event{
+			Summary:     summary,
+			Start:       &calendar.EventDateTime{Date: dateStr},
+			End:         &calendar.EventDateTime{Date: nextDateStr},
+			Description: finalDescription,
+		})
+		if _, err := call.Do(); err != nil {
+			return fmt.Errorf("failed to write all-day blocker on date: %w", err)
+		}
+		return nil
+	}
+
+	// Convert to calendar timezone for proper display.
 	calendarDate := date.In(r.calendarTZ)
 
 	parsedStart, err := time.Parse("15:04", startTime)
@@ -242,16 +266,6 @@ func (r *Repository) WriteBlockerOnDate(date time.Time, summary, description, st
 		calendarDate.Year(), calendarDate.Month(), calendarDate.Day(),
 		parsedEnd.Hour(), parsedEnd.Minute(), 0, 0,
 		r.calendarTZ)
-
-	// Combine custom description with signature for identification
-	// If description is empty or just the signature, use signature only
-	var finalDescription string
-	if description == "" || description == defaultBlockerSignature {
-		finalDescription = defaultBlockerSignature
-	} else {
-		// Append signature to custom description for identification
-		finalDescription = description + defaultBlockerSignature
-	}
 
 	call := r.service.Events.Insert(r.writeCalendarID, &calendar.Event{
 		Summary:     summary,

@@ -205,8 +205,7 @@ func dashboardPageHTML(basePath string, greeting string, rows []dashRow, allUser
 			if calDisplay == "" {
 				calDisplay = r.CalendarID
 			}
-			meta := fmt.Sprintf(`schema: <strong>%s</strong> &nbsp;·&nbsp; by: %s &nbsp;·&nbsp; 📅 %s`,
-				html.EscapeString(r.Schema),
+			meta := fmt.Sprintf(`by: %s &nbsp;·&nbsp; 📅 %s`,
 				html.EscapeString(trunc(r.Author, 40)),
 				html.EscapeString(trunc(calDisplay, 50)),
 			)
