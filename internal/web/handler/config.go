@@ -156,16 +156,18 @@ func (h *ConfigHandler) HandleDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	role := roleFromContext(r.Context())
 
-	// Parse once; resolve calendar name from the result.
+	// Parse once; validate; resolve calendar name from the result.
 	var parsedCfg *appconfig.Config
 	calendarName := ""
 	if appCfg, parseErr := appconfig.LoadWithDefaultFromByteArray([]byte(cfg.ConfigYAML)); parseErr == nil {
-		parsedCfg = appCfg
-		calID := appCfg.WriteTo.GoogleCalendar.ID
-		for _, cal := range h.fetchCalendars(r.Context(), user.ID) {
-			if cal.ID == calID {
-				calendarName = cal.Summary
-				break
+		if appCfg.Validate() == nil {
+			parsedCfg = appCfg
+			calID := appCfg.WriteTo.GoogleCalendar.ID
+			for _, cal := range h.fetchCalendars(r.Context(), user.ID) {
+				if cal.ID == calID {
+					calendarName = cal.Summary
+					break
+				}
 			}
 		}
 	}
@@ -1058,7 +1060,7 @@ func configDetailHTML(basePath string, cfg *db.Config, currentUserID int64, role
 	autoSyncTrigger := autoSyncTriggerHTML(cfg, canEdit)
 
 	// Build human-readable config detail cards.
-	configCardsHTML := configDetailCardsHTML(appCfg, calendarName)
+	configCardsHTML := configDetailCardsHTML(appCfg, calendarName, cfg.ConfigYAML)
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -1197,9 +1199,15 @@ func countryLabel(code string) string {
 // configDetailCardsHTML renders human-readable detail cards from the parsed config.
 // Falls back to a generic parse-error notice when appCfg is nil.
 // calendarName is the human-readable name for the write calendar (empty string = show ID only).
-func configDetailCardsHTML(appCfg *appconfig.Config, calendarName string) string {
+func configDetailCardsHTML(appCfg *appconfig.Config, calendarName string, rawYAML string) string {
 	if appCfg == nil {
-		return `<div class="detail-card"><h4>Config (parse error)</h4><p style="font-size:0.84rem;color:var(--pico-muted-color)">Could not parse config YAML.</p></div>`
+		escaped := html.EscapeString(rawYAML)
+		if escaped == "" {
+			escaped = "(empty)"
+		}
+		return fmt.Sprintf(`<div class="detail-card"><h4>Config (parse / validation error)</h4>
+<p style="font-size:0.84rem;color:var(--pico-muted-color);margin-bottom:0.5rem">Could not parse or validate this config. Raw YAML below:</p>
+<pre style="font-size:0.8rem;white-space:pre-wrap;word-break:break-word;overflow:auto;max-height:400px;background:rgba(0,0,0,0.25);padding:0.75rem;border-radius:0.4rem">%s</pre></div>`, escaped)
 	}
 
 	d := appCfg.WriteTo.GoogleCalendar.IfTodayIsFreezeDay.Default
