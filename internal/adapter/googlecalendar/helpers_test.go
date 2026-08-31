@@ -16,8 +16,9 @@ const (
 
 func TestIsPublicHoliday(t *testing.T) {
 	const (
-		jpCalendarID = "ja.japanese#holiday@group.v.calendar.google.com"
-		vnCalendarID = "vi.vietnamese#holiday@group.v.calendar.google.com"
+		jpCalendarID      = "ja.japanese#holiday@group.v.calendar.google.com"
+		vnCalendarID      = "vi.vietnamese#holiday@group.v.calendar.google.com"
+		unknownCalendarID = "en.usa#holiday@group.v.calendar.google.com"
 	)
 
 	tests := []struct {
@@ -35,12 +36,20 @@ func TestIsPublicHoliday(t *testing.T) {
 		{"vn public holiday", vnCalendarID, "Ngày lễ", true},
 		{"vn observance is not a holiday", vnCalendarID, vnObservanceDesc, false},
 
-		// The old English string is never emitted by the localized calendars.
-		{"legacy english string is not matched", jpCalendarID, "Public holiday", false},
+		// English "Public holiday" is accepted on any calendar as a fallback, in case
+		// Google serves a localized feed untranslated.
+		{"english fallback on jp calendar", jpCalendarID, "Public holiday", true},
+		{"english fallback on vn calendar", vnCalendarID, "Public holiday", true},
+		{"english fallback on unknown calendar", unknownCalendarID, "Public holiday", true},
+		{"english observance is not a holiday", jpCalendarID, "Observance", false},
+
+		// Surrounding whitespace must not defeat the match.
+		{"leading/trailing whitespace is trimmed", jpCalendarID, "  祝日\n", true},
 
 		// Edge cases.
 		{"empty description", jpCalendarID, "", false},
-		{"unknown calendar", "en.usa#holiday@group.v.calendar.google.com", "祝日", false},
+		{"whitespace-only description", jpCalendarID, "  \n", false},
+		{"localized string on wrong/unknown calendar", unknownCalendarID, "祝日", false},
 	}
 
 	for _, tt := range tests {
